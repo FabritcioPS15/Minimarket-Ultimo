@@ -4,6 +4,7 @@ import { Sale, User, KardexEntry, CashSession, Alert, AuditEntry } from '../type
 import { useProducts } from '../hooks/useProducts';
 import { useUsers } from '../hooks/useUsers';
 import { useSales } from '../hooks/useSales';
+import { useClients } from '../hooks/useClients';
 
 interface AppState {
   kardexEntries: KardexEntry[];
@@ -58,6 +59,17 @@ interface AppContextType {
     deleteSale: (id: string) => Promise<void>;
     getSalesByDateRange: (startDate: string, endDate: string) => Promise<Sale[]>;
     getSalesStats: () => Promise<any>;
+    refetch: () => Promise<void>;
+  };
+  clients: {
+    data: any[];
+    loading: boolean;
+    error: string | null;
+    addClient: (client: any) => Promise<any>;
+    updateClient: (client: any) => Promise<any>;
+    deleteClient: (id: string) => Promise<void>;
+    findClientByDocument: (documentNumber: string) => Promise<any>;
+    getAllClients: () => Promise<any[]>;
     refetch: () => Promise<void>;
   };
 }
@@ -139,6 +151,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const productsHook = useProducts();
   const usersHook = useUsers();
   const salesHook = useSales();
+  const clientsHook = useClients();
 
   // 👉 función para registrar eventos de auditoría
   const addAuditEntry = (
@@ -224,6 +237,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         getSalesByDateRange: salesHook.getSalesByDateRange,
         getSalesStats: salesHook.getSalesStats,
         refetch: salesHook.refetch,
+      },
+      clients: {
+        data: clientsHook.clients,
+        loading: clientsHook.loading,
+        error: clientsHook.error,
+        addClient: clientsHook.addClient,
+        updateClient: clientsHook.updateClient,
+        deleteClient: clientsHook.deleteClient,
+        findClientByDocument: clientsHook.findClientByDocument,
+        getAllClients: clientsHook.getAllClients,
+        refetch: clientsHook.refetch,
       }
     }}>
       {children}
