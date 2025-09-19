@@ -7,10 +7,7 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  Cell
+  ResponsiveContainer
 } from 'recharts';
 import { TrendingUp, DollarSign, Percent, Calculator, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -18,8 +15,21 @@ export function ProfitAnalysis() {
   const { products, sales } = useApp();
   const [period, setPeriod] = useState<'weekly' | 'monthly' | 'quarterly'>('monthly');
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState<number>(6); // meses a mostrar
 
   const profitData = useMemo(() => {
+    // Filtrar ventas por rango de tiempo (últimos X meses)
+    const now = new Date();
+    const startDate = new Date();
+    startDate.setMonth(now.getMonth() - timeRange);
+    startDate.setDate(1); // Empezar desde el primer día del mes
+    startDate.setHours(0, 0, 0, 0);
+    
+    const filteredSales = sales.data.filter(sale => {
+      const saleDate = new Date(sale.createdAt);
+      return saleDate >= startDate && saleDate <= now;
+    });
+
     // Calculate profit by product
     const productProfits = new Map<string, { 
       name: string; 
@@ -31,37 +41,79 @@ export function ProfitAnalysis() {
       salePrice: number;
     }>();
 
-    sales.data.forEach(sale => {
+    filteredSales.forEach(sale => {
       sale.items.forEach(item => {
         const product = products.data.find(p => p.id === item.productId);
         if (product) {
-        const price = item.price ?? item.unitPrice ?? product.salePrice ?? 0;
-        const name = item.name ?? item.productName ?? product.name ?? 'Producto';
-        const profit = (price - product.costPrice) * item.quantity;
-        const existing = productProfits.get(item.productId) || {
-  name,
-  totalProfit: 0,
-  unitsSold: 0,
-  avgProfit: 0,
-  profitMargin: 0,
-  costPrice: product.costPrice,
-  salePrice: product.salePrice,
-};
+          const price = item.price ?? item.unitPrice ?? product.salePrice ?? 0;
+          const name = item.name ?? item.productName ?? product.name ?? 'Producto';
+          const profit = (price - product.costPrice) * item.quantity;
+          const existing = productProfits.get(item.productId) || {
+            name,
+            totalProfit: 0,
+            unitsSold: 0,
+            avgProfit: 0,
+            profitMargin: 0,
+            costPrice: product.costPrice,
+            salePrice: product.salePrice,
+          };
           
           productProfits.set(item.productId, {
             ...existing,
             totalProfit: existing.totalProfit + profit,
             unitsSold: existing.unitsSold + item.quantity,
-            avgProfit: (existing.totalProfit + profit) / (existing.unitsSold + item.quantity),
-            profitMargin: ((product.salePrice - product.costPrice) / product.salePrice) * 100,
+            avgProfit: existing.unitsSold + item.quantity > 0 
+              ? (existing.totalProfit + profit) / (existing.unitsSold + item.quantity)
+              : 0,
+            profitMargin: product.salePrice > 0 
+              ? ((product.salePrice - product.costPrice) / product.salePrice) * 100
+              : 0,
           });
         }
       });
     });
 
-    // Get profit over time
+    // Get profit over time - generar períodos completos incluso sin ventas
     const profitByPeriod = new Map<string, number>();
-    sales.data.forEach(sale => {
+    
+    // Generar todos los períodos en el rango seleccionado
+    const currentDate = new Date(startDate);
+    while (currentDate <= now) {
+      let key = '';
+      
+      switch (period) {
+        case 'weekly':
+          const weekStart = new Date(currentDate);
+          weekStart.setDate(currentDate.getDate() - currentDate.getDay());
+          key = weekStart.toISOString().slice(0, 10);
+          break;
+        case 'monthly':
+          key = `${currentDate.getFullYear()}-${(currentDate.getMonth() + 1).toString().padStart(2, '0')}`;
+          break;
+        case 'quarterly':
+          const quarter = Math.floor(currentDate.getMonth() / 3) + 1;
+          key = `${currentDate.getFullYear()}-Q${quarter}`;
+          break;
+      }
+      
+      profitByPeriod.set(key, 0); // Inicializar con 0
+      
+      // Avanzar al siguiente período
+      switch (period) {
+        case 'weekly':
+          currentDate.setDate(currentDate.getDate() + 7);
+          break;
+        case 'monthly':
+          currentDate.setMonth(currentDate.getMonth() + 1);
+          break;
+        case 'quarterly':
+          currentDate.setMonth(currentDate.getMonth() + 3);
+          break;
+      }
+    }
+
+    // Calcular ganancias por período
+    filteredSales.forEach(sale => {
       const date = new Date(sale.createdAt);
       let key = '';
       
@@ -85,7 +137,9 @@ export function ProfitAnalysis() {
         return sum + (product ? ((item.price ?? item.unitPrice ?? product.salePrice ?? 0) - product.costPrice) * item.quantity : 0);
       }, 0);
 
-      profitByPeriod.set(key, (profitByPeriod.get(key) || 0) + saleProfit);
+      if (profitByPeriod.has(key)) {
+        profitByPeriod.set(key, profitByPeriod.get(key)! + saleProfit);
+      }
     });
 
     const sortedProducts = Array.from(productProfits.entries())
@@ -95,13 +149,18 @@ export function ProfitAnalysis() {
     const totalProfit = Array.from(productProfits.values())
       .reduce((sum, p) => sum + p.totalProfit, 0);
 
-    const totalRevenue = sales.data.reduce((sum, sale) => sum + sale.total, 0);
-    const totalCost = sales.data.reduce((sum, sale) => 
+    const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
+    const totalCost = filteredSales.reduce((sum, sale) => 
       sum + sale.items.reduce((itemSum, item) => {
         const product = products.data.find(p => p.id === item.productId);
         return itemSum + (product ? product.costPrice * item.quantity : 0);
       }, 0), 0
     );
+
+    // Convertir el Map a array y ordenar
+    const chartData = Array.from(profitByPeriod.entries())
+      .map(([period, profit]) => ({ period, profit }))
+      .sort((a, b) => a.period.localeCompare(b.period));
 
     return {
       totalProfit,
@@ -110,17 +169,27 @@ export function ProfitAnalysis() {
       profitMargin: totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0,
       topProducts: sortedProducts.slice(0, 10),
       leastProfitableProducts: sortedProducts.slice(-5).reverse(),
-      chartData: Array.from(profitByPeriod.entries())
-        .map(([period, profit]) => ({ period, profit }))
-        .sort((a, b) => a.period.localeCompare(b.period)),
+      chartData,
     };
-  }, [sales.data, products.data, period]);
+  }, [sales.data, products.data, period, timeRange]);
 
   // Función para obtener el color según el margen de ganancia
   const getProfitMarginColor = (margin: number) => {
     if (margin > 30) return '#10B981'; // Verde
     if (margin > 15) return '#F59E0B'; // Amarillo
     return '#EF4444'; // Rojo
+  };
+
+  // Formatear etiquetas del eje X según el período
+  const formatXAxis = (value: string) => {
+    if (period === 'monthly') {
+      const [year, month] = value.split('-');
+      return new Date(parseInt(year), parseInt(month) - 1).toLocaleString('es-ES', { month: 'short' });
+    } else if (period === 'quarterly') {
+      return value;
+    } else {
+      return value.slice(5); // Mostrar solo mes-día para semanas
+    }
   };
 
   return (
@@ -139,6 +208,19 @@ export function ProfitAnalysis() {
             <option value="weekly">Semanal</option>
             <option value="monthly">Mensual</option>
             <option value="quarterly">Trimestral</option>
+          </select>
+          
+          <label className="block text-sm font-medium text-gray-700 mt-3 sm:mt-0">
+            Rango de Tiempo
+          </label>
+          <select
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            value={timeRange}
+            onChange={(e) => setTimeRange(Number(e.target.value))}
+          >
+            <option value={3}>Últimos 3 meses</option>
+            <option value={6}>Últimos 6 meses</option>
+            <option value={12}>Últimos 12 meses</option>
           </select>
         </div>
       </div>
@@ -193,9 +275,21 @@ export function ProfitAnalysis() {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={profitData.chartData}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="period" />
+              <XAxis 
+                dataKey="period" 
+                tickFormatter={formatXAxis}
+              />
               <YAxis />
-              <Tooltip formatter={(value: any) => [`S/ ${value.toFixed(2)}`, 'Ganancia']} />
+              <Tooltip 
+                formatter={(value: any) => [`S/ ${value.toFixed(2)}`, 'Ganancia']}
+                labelFormatter={(label) => {
+                  if (period === 'monthly') {
+                    const [year, month] = label.split('-');
+                    return new Date(parseInt(year), parseInt(month) - 1).toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+                  }
+                  return label;
+                }}
+              />
               <Line type="monotone" dataKey="profit" stroke="#10B981" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
@@ -311,7 +405,7 @@ export function ProfitAnalysis() {
                   <div className="flex justify-between">
                     <span className="text-xs text-gray-600">ROI:</span>
                     <span className="text-xs font-medium text-blue-600">
-                      {((product.salePrice - product.costPrice) / product.costPrice * 100).toFixed(1)}%
+                      {product.costPrice > 0 ? ((product.salePrice - product.costPrice) / product.costPrice * 100).toFixed(1) : 0}%
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -401,7 +495,7 @@ export function ProfitAnalysis() {
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
                     <span className="text-sm font-medium text-blue-600">
-                      {((product.salePrice - product.costPrice) / product.costPrice * 100).toFixed(1)}%
+                      {product.costPrice > 0 ? ((product.salePrice - product.costPrice) / product.costPrice * 100).toFixed(1) : 0}%
                     </span>
                   </td>
                 </tr>
