@@ -233,8 +233,7 @@ export function PointOfSale() {
   );
 
   // Quitar IGV - el total es igual al subtotal
-  const subtotal = cart.reduce((sum, item) => sum + ((item.price ?? 0) * (item.quantity ?? 0)), 0);
-  const total = subtotal; // Sin IGV
+const subtotal = cart.reduce((sum, item) => sum + ((item.unitPrice ?? 0) * (item.quantity ?? 0)), 0);  const total = subtotal; // Sin IGV
 
   // Filtrar clientes según búsqueda
   const filteredClients = useMemo(() => {
@@ -321,14 +320,14 @@ export function PointOfSale() {
     }
     setCart([
       ...cart,
-      {
-      id: Date.now().toString(),
-      productId: product.id,
-      productName: product.name, // 👈 ¡ESTO ES CLAVE! Ahora sí se guarda
-      unitPrice: product.salePrice, // 👈 ¡ESTO TAMBIÉN ES CLAVE!
-      quantity: 1,
-      total: product.salePrice,
-      }
+{
+  id: Date.now().toString(),
+  productId: product.id,
+  productName: product.name,
+  unitPrice: product.salePrice, // ← Esta es la propiedad correcta
+  quantity: 1,
+  total: product.salePrice,     // ← Y aquí también
+}
     ]);
   };
 
@@ -347,11 +346,11 @@ export function PointOfSale() {
       return;
     }
 
-    setCart(cart.map(item => 
-      item.id === itemId 
-        ? { ...item, quantity: newQuantity, total: (item.price ?? 0) * newQuantity }
-        : item
-    ));
+setCart(cart.map(item => 
+  item.id === itemId 
+    ? { ...item, quantity: newQuantity, total: (item.unitPrice ?? 0) * newQuantity }
+    : item
+));
   };
 
   const removeFromCart = (itemId: string) => {
@@ -391,9 +390,9 @@ export function PointOfSale() {
       const product = productsArray.find(p => p.id === item.productId);
       return {
         ...item,
-        name: item.name ?? product?.name ?? '',
-        price: item.price ?? product?.salePrice ?? 0,
-        total: (item.price ?? product?.salePrice ?? 0) * (item.quantity ?? 1),
+        name: item.productName ?? product?.name ?? '',
+        unitPrice: item.unitPrice ?? product?.salePrice ?? 0,
+        total: (item.unitPrice ?? product?.salePrice ?? 0) * (item.quantity ?? 1),
       };
     });
 
@@ -472,7 +471,7 @@ export function PointOfSale() {
     setCurrentSale(sale);
     setConfirmedSale(sale);
     setShowSaleConfirmation(true);
-    clearCart();  // Limpiar carrito después de la venta
+    clearCart(); 
   };
 
   const paymentMethods = [
@@ -712,8 +711,8 @@ export function PointOfSale() {
                   )}
                   
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-medium text-gray-900 truncate">{item.name}</h4>
-                    <p className="text-xs text-gray-500">S/ {(item.price ?? 0).toFixed(2)} c/u</p>
+                    <h4 className="text-sm font-medium text-gray-900 truncate">{item.productName}</h4>
+                    <p className="text-xs text-gray-500">S/ {(item.unitPrice ?? 0).toFixed(2)} c/u</p>
                   </div>
                   
                   <div className="flex items-center space-x-2">
