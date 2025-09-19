@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Product, Sale, SaleItem, PaymentMethod } from '../../types';
 import { 
@@ -15,7 +15,9 @@ import {
   Package,
   Eye,
   X,
-  User
+  User,
+  Search,
+  Check
 } from 'lucide-react';
 import { PrintableInvoice } from './PrintableInvoice';
 
@@ -50,7 +52,6 @@ export function InvoiceModal({ open, onClose, sale, type, setType }: any) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md relative">
-        {/* Botón de cerrar (X) */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
@@ -126,7 +127,9 @@ export function PointOfSale() {
   const [showSaleConfirmation, setShowSaleConfirmation] = useState(false);
   const [confirmedSale, setConfirmedSale] = useState<any>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [showAddClientModal, setShowAddClientModal] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const [showAddClientFromSearch, setShowAddClientFromSearch] = useState(false);
   const [newClientForm, setNewClientForm] = useState({
     firstName: '',
     lastName: '',
@@ -137,11 +140,23 @@ export function PointOfSale() {
     address: '',
     isActive: true,
   });
+  const clientSearchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = () => setInvoiceOpen(true);
     window.addEventListener('openInvoiceModal', handler);
     return () => window.removeEventListener('openInvoiceModal', handler);
+  }, []);
+
+  // Cerrar sugerencias al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (clientSearchRef.current && !clientSearchRef.current.contains(event.target as Node)) {
+        setShowClientSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // Función para agregar cliente rápido
@@ -187,7 +202,7 @@ export function PointOfSale() {
       await clients.addClient(clientData);
       
       // Cerrar modal y resetear formulario
-      setShowAddClientModal(false);
+      setShowAddClientFromSearch(false);
       setNewClientForm({
         firstName: '',
         lastName: '',
@@ -198,6 +213,9 @@ export function PointOfSale() {
         address: '',
         isActive: true,
       });
+      
+      // Actualizar la lista de clientes
+      clients.refetch();
       
       alert('Cliente agregado exitosamente');
       
@@ -217,6 +235,65 @@ export function PointOfSale() {
   // Quitar IGV - el total es igual al subtotal
   const subtotal = cart.reduce((sum, item) => sum + ((item.price ?? 0) * (item.quantity ?? 0)), 0);
   const total = subtotal; // Sin IGV
+
+  // Filtrar clientes según búsqueda
+  const filteredClients = useMemo(() => {
+    if (!clientSearch.trim()) return [];
+    
+    return clients.data.filter(client =>
+      `${client.firstName} ${client.lastName}`.toLowerCase().includes(clientSearch.toLowerCase()) ||
+      client.documentNumber.includes(clientSearch) ||
+      client.email?.toLowerCase().includes(clientSearch.toLowerCase()) ||
+      client.phone?.includes(clientSearch)
+    );
+  }, [clientSearch, clients.data]);
+
+  // Manejar selección de cliente
+  const handleSelectClient = (client: any) => {
+    setSelectedClientId(client.id);
+    setCustomerName(`${client.firstName} ${client.lastName}`);
+    setCustomerDocument(client.documentNumber);
+    setClientSearch(`${client.firstName} ${client.lastName}`);
+    setShowClientSuggestions(false);
+  };
+
+  // Manejar búsqueda de cliente
+  const handleClientSearch = (value: string) => {
+    setClientSearch(value);
+    setShowClientSuggestions(true);
+    
+    // Si se borra la búsqueda, resetear a cliente general
+    if (!value.trim()) {
+      setSelectedClientId(null);
+      setCustomerName('');
+      setCustomerDocument('');
+    }
+  };
+
+  // Preparar formulario para nuevo cliente desde búsqueda
+  const prepareNewClientFromSearch = () => {
+    // Intentar extraer nombre y apellido de la búsqueda
+    const searchParts = clientSearch.trim().split(' ');
+    let firstName = '';
+    let lastName = '';
+    
+    if (searchParts.length === 1) {
+      firstName = searchParts[0];
+    } else if (searchParts.length >= 2) {
+      firstName = searchParts[0];
+      lastName = searchParts.slice(1).join(' ');
+    }
+    
+    setNewClientForm({
+      ...newClientForm,
+      firstName,
+      lastName,
+      documentNumber: clientSearch.trim().length === 8 || clientSearch.trim().length === 11 ? clientSearch.trim() : ''
+    });
+    
+    setShowAddClientFromSearch(true);
+    setShowClientSuggestions(false);
+  };
 
   // Función para determinar el color del número de stock
   const getStockColor = (product: Product) => {
@@ -245,12 +322,12 @@ export function PointOfSale() {
     setCart([
       ...cart,
       {
-        id: Date.now().toString(),
-        productId: product.id,
-        name: product.name,
-        price: product.salePrice,
-        quantity: 1,
-        total: product.salePrice,
+      id: Date.now().toString(),
+      productId: product.id,
+      productName: product.name, // 👈 ¡ESTO ES CLAVE! Ahora sí se guarda
+      unitPrice: product.salePrice, // 👈 ¡ESTO TAMBIÉN ES CLAVE!
+      quantity: 1,
+      total: product.salePrice,
       }
     ]);
   };
@@ -287,100 +364,116 @@ export function PointOfSale() {
     setCustomerDocument('');
     setOperationNumber('');
     setPaymentMethod('cash');
+    setClientSearch('');
+    setSelectedClientId(null);
   };
 
-const processSale = async () => {
-  if (!currentCashSession && currentUser?.role !== 'admin') {
-    alert('Debe abrir una sesión de caja para realizar ventas');
-    return;
-  }
-
-  if (cart.length === 0) {
-    alert('El carrito está vacío');
-    return;
-  }
-
-  if (paymentMethod !== 'cash' && !operationNumber.trim()) {
-    alert('Debe ingresar el número de operación para pagos electrónicos');
-    return;
-  }
-
-  const saleNumber = `V-${Date.now()}`;
-  
-  // CORRECCIÓN: Usar productsArray en lugar de products.find
-  const saleItems = cart.map(item => {
-    const product = productsArray.find(p => p.id === item.productId);
-    return {
-      ...item,
-      name: item.name ?? product?.name ?? '',
-      price: item.price ?? product?.salePrice ?? 0,
-      total: (item.price ?? product?.salePrice ?? 0) * (item.quantity ?? 1),
-    };
-  });
-
-  const subtotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-  const total = subtotal; // Sin IGV
-
-  const sale: Sale = {
-    id: Date.now().toString(),
-    saleNumber,
-    items: saleItems,
-    subtotal,
-    tax: 0, // IGV en 0
-    total,
-    paymentMethod,
-    operationNumber: operationNumber || undefined,
-    customerName: customerName || undefined,
-    customerDocument: customerDocument || undefined,
-    status: 'completed',
-    createdAt: new Date().toISOString(),
-    createdBy: currentUser?.id || '',
-  };
-
-  // Guardar venta en la base de datos
-  try {
-    await sales.addSale(sale);
-  } catch (error) {
-    console.error('Error saving sale:', error);
-    alert('Error al guardar la venta: ' + (typeof error === 'object' && error !== null && 'message' in error ? (error as { message: string }).message : String(error)));
-    return;
-  }
-
-  // Actualizar stock y kardex
-  cart.forEach(item => {
-    // CORRECCIÓN: Usar productsArray en lugar de products.data
-    const product = productsArray.find(p => p.id === item.productId);
-    if (product) {
-      const updatedProduct = {
-        ...product,
-        currentStock: product.currentStock - item.quantity,
-        updatedAt: new Date().toISOString(),
-      };
-      products.updateProduct(updatedProduct);
-
-      dispatch({
-        type: 'ADD_KARDEX_ENTRY',
-        payload: {
-          id: Date.now().toString() + Math.random(),
-          productId: product.id,
-          type: 'exit',
-          quantity: item.quantity,
-          unitCost: product.costPrice,
-          totalCost: product.costPrice * item.quantity,
-          reason: 'Venta',
-          reference: saleNumber,
-          createdAt: new Date().toISOString(),
-          createdBy: currentUser?.id || '',
-        },
-      });
+  const processSale = async () => {
+    if (!currentCashSession && currentUser?.role !== 'admin') {
+      alert('Debe abrir una sesión de caja para realizar ventas');
+      return;
     }
-  });
 
-  setCurrentSale(sale);
-  setConfirmedSale(sale);
-  setShowSaleConfirmation(true);
-  clearCart();  // Limpiar carrito después de la venta
-};
+    if (cart.length === 0) {
+      alert('El carrito está vacío');
+      return;
+    }
+
+    if (paymentMethod !== 'cash' && !operationNumber.trim()) {
+      alert('Debe ingresar el número de operación para pagos electrónicos');
+      return;
+    }
+
+    const saleNumber = `V-${Date.now()}`;
+    
+    // CORRECCIÓN: Usar productsArray en lugar de products.find
+    const saleItems = cart.map(item => {
+      const product = productsArray.find(p => p.id === item.productId);
+      return {
+        ...item,
+        name: item.name ?? product?.name ?? '',
+        price: item.price ?? product?.salePrice ?? 0,
+        total: (item.price ?? product?.salePrice ?? 0) * (item.quantity ?? 1),
+      };
+    });
+
+    const subtotal = saleItems.reduce((sum, item) => sum + item.total, 0);
+    const total = subtotal; // Sin IGV
+
+    // Determinar información del cliente
+    let finalCustomerName = '';
+    let finalCustomerDocument = '';
+    
+    if (selectedClientId) {
+      const selectedClient = clients.data.find(c => c.id === selectedClientId);
+      if (selectedClient) {
+        finalCustomerName = `${selectedClient.firstName} ${selectedClient.lastName}`;
+        finalCustomerDocument = selectedClient.documentNumber;
+      }
+    } else if (clientSearch.trim()) {
+      finalCustomerName = clientSearch;
+    }
+
+    const sale: Sale = {
+      id: Date.now().toString(),
+      saleNumber,
+      items: saleItems,
+      subtotal,
+      tax: 0, // IGV en 0
+      total,
+      paymentMethod,
+      operationNumber: operationNumber || undefined,
+      customerName: finalCustomerName || undefined,
+      customerDocument: finalCustomerDocument || undefined,
+      status: 'completed',
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser?.id || '',
+    };
+
+    // Guardar venta en la base de datos
+    try {
+      await sales.addSale(sale);
+    } catch (error) {
+      console.error('Error saving sale:', error);
+      alert('Error al guardar la venta: ' + (typeof error === 'object' && error !== null && 'message' in error ? (error as { message: string }).message : String(error)));
+      return;
+    }
+
+    // Actualizar stock y kardex
+    cart.forEach(item => {
+      // CORRECCIÓN: Usar productsArray en lugar de products.data
+      const product = productsArray.find(p => p.id === item.productId);
+      if (product) {
+        const updatedProduct = {
+          ...product,
+          currentStock: product.currentStock - item.quantity,
+          updatedAt: new Date().toISOString(),
+        };
+        products.updateProduct(updatedProduct);
+
+        dispatch({
+          type: 'ADD_KARDEX_ENTRY',
+          payload: {
+            id: Date.now().toString() + Math.random(),
+            productId: product.id,
+            type: 'exit',
+            quantity: item.quantity,
+            unitCost: product.costPrice,
+            totalCost: product.costPrice * item.quantity,
+            reason: 'Venta',
+            reference: saleNumber,
+            createdAt: new Date().toISOString(),
+            createdBy: currentUser?.id || '',
+          },
+        });
+      }
+    });
+
+    setCurrentSale(sale);
+    setConfirmedSale(sale);
+    setShowSaleConfirmation(true);
+    clearCart();  // Limpiar carrito después de la venta
+  };
 
   const paymentMethods = [
     { 
@@ -427,11 +520,10 @@ const processSale = async () => {
     },
   ];
 
- const SaleConfirmationModal = () => (
+  const SaleConfirmationModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md mx-4">
         <div className="text-center">
-          {/* Icono de éxito */}
           <div className="bg-green-100 rounded-full p-4 inline-block mb-4">
             <svg className="h-12 w-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -441,7 +533,6 @@ const processSale = async () => {
           <h3 className="text-2xl font-bold text-gray-900 mb-2">¡Venta Realizada!</h3>
           <p className="text-gray-600 mb-6">La compra ha sido registrada exitosamente</p>
           
-          {/* Detalles de la venta */}
           {confirmedSale && (
             <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
               <div className="space-y-2">
@@ -465,7 +556,6 @@ const processSale = async () => {
             </div>
           )}
           
-          {/* Botones de acción */}
           <div className="space-y-3">
             <button
               onClick={() => {
@@ -493,7 +583,8 @@ const processSale = async () => {
       </div>
     </div>
   );
-   return (
+
+  return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Product Search */}
       <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200">
@@ -525,7 +616,6 @@ const processSale = async () => {
                 disabled={product.currentStock <= 0}
               >
                 <div className="flex items-start space-x-3">
-                  {/* Columna izquierda - Imagen */}
                   <div className="flex flex-col items-center">
                     {product.imageUrl ? (
                       <div className="relative mb-2">
@@ -548,22 +638,21 @@ const processSale = async () => {
                       </div>
                     )}
                     
-{product.imageUrl && (
-  <span
-    onClick={(e) => {
-      e.stopPropagation();
-      setImagePreview(product.imageUrl!);
-    }}
-    className="text-xs text-blue-600 hover:text-blue-800 flex items-center cursor-pointer"
-    title="Ver imagen"
-  >
-    <Eye className="h-3 w-3 mr-1" />
-    Ver
-  </span>
-)}
+                    {product.imageUrl && (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setImagePreview(product.imageUrl!);
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center cursor-pointer"
+                        title="Ver imagen"
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        Ver
+                      </span>
+                    )}
                   </div>
 
-                  {/* Columna derecha - Información */}
                   <div className="flex-1 min-w-0">
                     <h4 className="font-medium text-gray-900 text-[18px] mb-1 line-clamp-2">
                       {product.name}
@@ -603,7 +692,6 @@ const processSale = async () => {
           {/* Cart Items */}
           <div className="space-y-3 max-h-64 overflow-y-auto">
             {cart.map(item => {
-              // CORRECCIÓN: Usar productsArray en lugar de products.data
               const product = productsArray.find(p => p.id === item.productId);
               return (
                 <div key={item.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
@@ -676,134 +764,192 @@ const processSale = async () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Cliente
             </label>
-            <div className="flex flex-col space-y-2">
-              <select
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
-                value={selectedClientId ?? ''}
-                onChange={e => setSelectedClientId(e.target.value || null)}
-              >
-                <option value="">Cliente General</option>
-                {clients?.data?.map(client => (
-                  <option key={client.id} value={client.id}>
-                    {client.firstName} {client.lastName} - {client.documentNumber}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="flex items-center text-blue-600 hover:text-blue-800 text-xs"
-                onClick={() => setShowAddClientModal(true)}
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Agregar nuevo cliente
-              </button>
+            
+            <div className="relative" ref={clientSearchRef}>
+              <div className="flex items-center border border-gray-300 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent">
+                <Search className="h-4 w-4 text-gray-400 mr-2" />
+                <input
+                  type="text"
+                  className="flex-1 outline-none text-sm"
+                  value={clientSearch}
+                  onChange={(e) => handleClientSearch(e.target.value)}
+                  onFocus={() => setShowClientSuggestions(true)}
+                  placeholder="Buscar cliente por nombre, documento, email..."
+                />
+              </div>
+              
+              {/* Sugerencias de clientes */}
+              {showClientSuggestions && clientSearch.trim() && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredClients.length > 0 ? (
+                    filteredClients.map(client => (
+                      <div
+                        key={client.id}
+                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
+                        onClick={() => handleSelectClient(client)}
+                      >
+                        <div>
+                          <div className="font-medium">{client.firstName} {client.lastName}</div>
+                          <div className="text-xs text-gray-500">
+                            {client.documentType}: {client.documentNumber}
+                            {client.email && ` • ${client.email}`}
+                          </div>
+                        </div>
+                        {selectedClientId === client.id && (
+                          <Check className="h-4 w-4 text-green-600" />
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div
+                      className="px-4 py-3 hover:bg-gray-100 cursor-pointer flex items-center text-blue-600"
+                      onClick={prepareNewClientFromSearch}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      <span>Agregar "{clientSearch}" como nuevo cliente</span>
+                    </div>
+                  )}
+                  
+                  {/* Opción para cliente general */}
+                  <div
+                    className="px-4 py-2 border-t border-gray-200 hover:bg-gray-100 cursor-pointer"
+                    onClick={() => {
+                      setSelectedClientId(null);
+                      setCustomerName('');
+                      setCustomerDocument('');
+                      setClientSearch('');
+                      setShowClientSuggestions(false);
+                    }}
+                  >
+                    <div className="font-medium">Cliente General</div>
+                    <div className="text-xs text-gray-500">No especificar cliente</div>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Modal para agregar cliente desde búsqueda */}
+            {showAddClientFromSearch && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md relative">
+                  <button
+                    onClick={() => setShowAddClientFromSearch(false)}
+                    className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                  <h3 className="text-lg font-semibold mb-4 text-center flex items-center justify-center">
+                    <User className="h-5 w-5 mr-2" />
+                    Agregar Nuevo Cliente
+                  </h3>
+                  <form
+                    onSubmit={e => {
+                      e.preventDefault();
+                      handleAddClient();
+                    }}
+                    className="space-y-3"
+                  >
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nombres *</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          value={newClientForm.firstName}
+                          onChange={e => setNewClientForm({ ...newClientForm, firstName: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Apellidos *</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          value={newClientForm.lastName}
+                          onChange={e => setNewClientForm({ ...newClientForm, lastName: e.target.value })}
+                          required
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Documento *</label>
+                        <select
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          value={newClientForm.documentType}
+                          onChange={e => setNewClientForm({ ...newClientForm, documentType: e.target.value })}
+                        >
+                          <option value="DNI">DNI</option>
+                          <option value="RUC">RUC</option>
+                          <option value="CE">Carnet de Extranjería</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Número de Documento *</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          value={newClientForm.documentNumber}
+                          onChange={e => setNewClientForm({ ...newClientForm, documentNumber: e.target.value })}
+                          required
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                      <input
+                        type="email"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                        value={newClientForm.email}
+                        onChange={e => setNewClientForm({ ...newClientForm, email: e.target.value })}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                        value={newClientForm.phone}
+                        onChange={e => setNewClientForm({ ...newClientForm, phone: e.target.value })}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                        value={newClientForm.address}
+                        onChange={e => setNewClientForm({ ...newClientForm, address: e.target.value })}
+                      />
+                    </div>
+                    
+                    <button
+                      type="submit"
+                      className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition-colors font-medium mt-2"
+                    >
+                      Guardar Cliente
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
             {/* Campos manuales si es Cliente General */}
-            {!selectedClientId && (
-              <>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg mt-2"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Nombre del cliente"
-                />
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg mt-2"
-                  value={customerDocument}
-                  onChange={(e) => setCustomerDocument(e.target.value)}
-                  placeholder="DNI/RUC"
-                />
-              </>
+            {!selectedClientId && clientSearch && (
+              <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="text-sm text-blue-800 mb-2">
+                  Se registrará como: <strong>{clientSearch}</strong>
+                </div>
+                <div className="text-xs text-blue-600">
+                  Esta información se asociará a la venta como "Cliente General"
+                </div>
+              </div>
             )}
           </div>
-
-          {/* Modal para agregar cliente rápido */}
-          {showAddClientModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md relative">
-                <button
-                  onClick={() => setShowAddClientModal(false)}
-                  className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-                <h3 className="text-lg font-semibold mb-4 text-center flex items-center justify-center">
-                  <User className="h-5 w-5 mr-2" />
-                  Agregar Cliente Rápido
-                </h3>
-                <form
-                  onSubmit={e => {
-                    e.preventDefault();
-                    handleAddClient();
-                  }}
-                  className="space-y-3"
-                >
-                  <input
-                    type="text"
-                    placeholder="Nombres"
-                    className="w-full px-3 py-2 border rounded"
-                    value={newClientForm.firstName}
-                    onChange={e => setNewClientForm({ ...newClientForm, firstName: e.target.value })}
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="Apellidos"
-                    className="w-full px-3 py-2 border rounded"
-                    value={newClientForm.lastName}
-                    onChange={e => setNewClientForm({ ...newClientForm, lastName: e.target.value })}
-                    required
-                  />
-                  <select
-                    className="w-full px-3 py-2 border rounded"
-                    value={newClientForm.documentType}
-                    onChange={e => setNewClientForm({ ...newClientForm, documentType: e.target.value })}
-                  >
-                    <option value="DNI">DNI</option>
-                    <option value="RUC">RUC</option>
-                    <option value="CE">Carnet de Extranjería</option>
-                  </select>
-                  <input
-                    type="text"
-                    placeholder="Número de documento"
-                    className="w-full px-3 py-2 border rounded"
-                    value={newClientForm.documentNumber}
-                    onChange={e => setNewClientForm({ ...newClientForm, documentNumber: e.target.value })}
-                    required
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email"
-                    className="w-full px-3 py-2 border rounded"
-                    value={newClientForm.email}
-                    onChange={e => setNewClientForm({ ...newClientForm, email: e.target.value })}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Teléfono"
-                    className="w-full px-3 py-2 border rounded"
-                    value={newClientForm.phone}
-                    onChange={e => setNewClientForm({ ...newClientForm, phone: e.target.value })}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Dirección"
-                    className="w-full px-3 py-2 border rounded"
-                    value={newClientForm.address}
-                    onChange={e => setNewClientForm({ ...newClientForm, address: e.target.value })}
-                  />
-                  <button
-                    type="submit"
-                    className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 mt-2"
-                  >
-                    Guardar Cliente
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
 
           {/* Payment Method */}
           <div className="mt-4">

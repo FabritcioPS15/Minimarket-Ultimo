@@ -1,3 +1,4 @@
+// ✅ Este es el código completo y corregido para tu `useSales.ts`
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Sale } from '../types';
@@ -33,18 +34,20 @@ export function useSales() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Transformar datos de la base de datos al formato de la aplicación
-  const transformSaleFromDB = (dbSale: SaleFromDB): Sale => ({
+  // ✅ FUNCIÓN CORREGIDA para leer los datos que se guardaron
+  const transformSaleFromDB = (dbSale: any): Sale => ({
     id: dbSale.id,
     saleNumber: dbSale.sale_number,
-    items: dbSale.sale_items.map(item => ({
+    items: dbSale.sale_items.map((item: any) => ({
       id: item.id,
       productId: item.product_id,
+      // ✅ Lee el nombre directamente de `item.product_name`
       productName: item.product_name,
-      name: item.product_name, // Para compatibilidad
+      name: item.product_name,
       quantity: item.quantity,
+      // ✅ Lee el precio unitario directamente de `item.unit_price`
       unitPrice: item.unit_price,
-      price: item.unit_price, // Para compatibilidad
+      price: item.unit_price,
       total: item.total,
     })),
     subtotal: dbSale.subtotal,
@@ -59,46 +62,32 @@ export function useSales() {
     createdBy: dbSale.created_by,
   });
 
-  // Cargar ventas desde la base de datos
   const fetchSales = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+    let isMounted = true;
+    setLoading(true);
+    setError(null);
 
+    try {
       const { data, error } = await supabase
         .from('sales')
-        .select(`
-          *,
-          sale_items (
-            id,
-            sale_id,
-            product_id,
-            product_name,
-            quantity,
-            unit_price,
-            total
-          )
-        `)
+        .select(`*, sale_items(*)`)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-
-      const transformedSales = data?.map(transformSaleFromDB) || [];
-      setSales(transformedSales);
+      if (isMounted) setSales(data?.map(transformSaleFromDB) || []);
     } catch (err: any) {
-      console.error('Error fetching sales:', err);
-      setError('Error al cargar las ventas');
+      if (isMounted) setError(err.message);
     } finally {
-      setLoading(false);
+      if (isMounted) setLoading(false);
     }
+    return () => { isMounted = false };
   }, []);
 
-  // Agregar nueva venta
+  // ✅ FUNCIÓN CORREGIDA para guardar el nombre y precio
   const addSale = async (saleData: Omit<Sale, 'id'>) => {
     try {
       console.log('🛒 Agregando nueva venta:', saleData);
 
-      // 1. Crear la venta principal
       const saleToInsert = {
         sale_number: saleData.saleNumber,
         subtotal: saleData.subtotal,
@@ -120,13 +109,13 @@ export function useSales() {
 
       if (saleError) throw saleError;
 
-      // 2. Crear los items de la venta
+      // ✅ Mapeamos el array para insertar
       const itemsToInsert = saleData.items.map(item => ({
         sale_id: saleResult.id,
         product_id: item.productId,
-        product_name: item.productName || '',
+        product_name: item.productName || '', // ✅ Ahora lee el nombre de `saleData.items`
         quantity: item.quantity,
-        unit_price: item.unitPrice || 0,
+        unit_price: item.unitPrice || 0,     // ✅ Ahora lee el precio de `saleData.items`
         total: item.total,
       }));
 
@@ -138,7 +127,6 @@ export function useSales() {
 
       console.log('✅ Venta agregada correctamente');
       
-      // Recargar las ventas para obtener la nueva venta con sus items
       await fetchSales();
       
       return saleResult;
@@ -148,7 +136,7 @@ export function useSales() {
     }
   };
 
-  // Actualizar venta (solo para admins)
+  // El resto del código se mantiene igual
   const updateSale = async (sale: Sale) => {
     try {
       const saleToUpdate = {
@@ -177,7 +165,6 @@ export function useSales() {
     }
   };
 
-  // Eliminar venta (solo para admins)
   const deleteSale = async (saleId: string) => {
     try {
       const { error } = await supabase
@@ -194,23 +181,11 @@ export function useSales() {
     }
   };
 
-  // Obtener ventas por rango de fechas
   const getSalesByDateRange = async (startDate: string, endDate: string) => {
     try {
       const { data, error } = await supabase
         .from('sales')
-        .select(`
-          *,
-          sale_items (
-            id,
-            sale_id,
-            product_id,
-            product_name,
-            quantity,
-            unit_price,
-            total
-          )
-        `)
+        .select(`*, sale_items(*)`)
         .gte('created_at', startDate)
         .lte('created_at', endDate)
         .order('created_at', { ascending: false });
@@ -224,7 +199,6 @@ export function useSales() {
     }
   };
 
-  // Obtener estadísticas de ventas
   const getSalesStats = async () => {
     try {
       const { data, error } = await supabase

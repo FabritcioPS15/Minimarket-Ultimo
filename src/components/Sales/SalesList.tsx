@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Sale } from '../../types';
+import { Sale, SaleItem } from '../../types';
 import html2pdf from 'html2pdf.js';
 import { 
   Receipt, 
@@ -16,8 +16,7 @@ import {
   CreditCard,
   User,
   ChevronDown,
-  ChevronUp,
-  MoreVertical
+  ChevronUp
 } from 'lucide-react';
 import { PrintableInvoice } from './PrintableInvoice';
 
@@ -34,22 +33,43 @@ export function SalesList() {
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
+  const normalizeSaleItems = (items: any[]): SaleItem[] => {
+    if (!items || !Array.isArray(items)) {
+      console.error('Items no es un array válido:', items);
+      return [];
+    }
+    
+    return items.map((item) => {
+      const productName = item.productName || item.name || 'Producto sin nombre';
+      const quantity = item.quantity || 1;
+      const unitPrice = item.unitPrice || item.price || 0;
+      const total = item.total || (quantity * unitPrice);
+      
+      return {
+        id: item.id || `temp-${Math.random().toString(36).substr(2, 9)}`,
+        productId: item.productId || item.id || '',
+        productName,
+        quantity,
+        unitPrice,
+        total
+      };
+    });
+  };
+
   const getFilteredSales = () => {
     let filtered = sales.data;
 
-    // Search filter
     if (searchTerm) {
       filtered = filtered.filter(sale =>
         sale.saleNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.customerDocument?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.items.some(item => 
-          item.name.toLowerCase().includes(searchTerm.toLowerCase())
+          (item.productName || item.name || '').toLowerCase().includes(searchTerm.toLowerCase())
         )
       );
     }
 
-    // Date filter
     if (dateFilter !== 'all') {
       const now = new Date();
       const startDate = new Date();
@@ -74,12 +94,10 @@ export function SalesList() {
       );
     }
 
-    // Payment filter
     if (paymentFilter !== 'all') {
       filtered = filtered.filter(sale => sale.paymentMethod === paymentFilter);
     }
 
-    // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(sale => sale.status === statusFilter);
     }
@@ -159,7 +177,6 @@ export function SalesList() {
 
   const hasActiveFilters = searchTerm || dateFilter !== 'all' || paymentFilter !== 'all' || statusFilter !== 'all';
 
-  // Función para formatear el método de pago en español
   const formatPaymentMethod = (method: string) => {
     switch (method) {
       case 'cash': return 'Efectivo';
@@ -171,7 +188,6 @@ export function SalesList() {
     }
   };
 
-  // Mostrar loading
   if (sales.loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -181,7 +197,6 @@ export function SalesList() {
     );
   }
 
-  // Mostrar error
   if (sales.error) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -204,7 +219,6 @@ export function SalesList() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Historial de Ventas</h2>
@@ -225,14 +239,13 @@ export function SalesList() {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className="flex items-center text-xs sm:text-sm bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 w-full sm:w-auto justify-center"
-          >
+            >
             <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
             Filtros
           </button>
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center justify-between">
@@ -273,7 +286,6 @@ export function SalesList() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className={`bg-white rounded-lg shadow-sm border border-gray-200 p-4 ${showFilters ? 'block' : 'hidden'}`}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="relative">
@@ -335,7 +347,6 @@ export function SalesList() {
         </div>
       </div>
 
-      {/* Sales Table - Desktop */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hidden md:block">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -405,7 +416,7 @@ export function SalesList() {
                         sale.paymentMethod === 'card' ? 'bg-blue-500' :
                         'bg-purple-500'
                       }`}></div>
-                      <div className="text-sm text-gray-900 capitalize">{sale.paymentMethod}</div>
+                      <div className="text-sm text-gray-900">{formatPaymentMethod(sale.paymentMethod)}</div>
                     </div>
                     {sale.operationNumber && (
                       <div className="text-xs text-gray-500">Op: {sale.operationNumber}</div>
@@ -470,7 +481,6 @@ export function SalesList() {
         </div>
       </div>
 
-      {/* Sales Cards - Mobile */}
       <div className="md:hidden space-y-4">
         {filteredSales.length > 0 ? filteredSales.map(sale => (
           <div key={sale.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -508,7 +518,7 @@ export function SalesList() {
                   </div>
                   <div className="text-xs">
                     <span className="text-gray-500">Pago:</span>
-                    <p className="font-medium text-gray-900 capitalize">
+                    <p className="font-medium text-gray-900">
                       {formatPaymentMethod(sale.paymentMethod)}
                     </p>
                   </div>
@@ -545,13 +555,13 @@ export function SalesList() {
                   <div className="mt-3">
                     <p className="text-gray-500 font-medium mb-2">Productos:</p>
                     <ul className="space-y-1">
-                      {sale.items.map((item: any) => (
+                      {normalizeSaleItems(sale.items).map((item: SaleItem) => (
                         <li key={item.id} className="text-xs text-gray-900 flex justify-between">
                           <span className="truncate flex-1 mr-2">
-                            {item.name} x {item.quantity}
+                            {item.productName} x {item.quantity}
                           </span>
                           <span className="flex-shrink-0">
-                            S/ {(item.price * item.quantity).toFixed(2)}
+                            S/ {(item.unitPrice * item.quantity).toFixed(2)}
                           </span>
                         </li>
                       ))}
@@ -572,7 +582,7 @@ export function SalesList() {
                     className="text-green-600 hover:text-green-800 p-1 hover:bg-green-50 rounded transition-colors"
                     onClick={() => handleAction(sale, 'download')}
                     title="Descargar comprobante"
-                  >
+                      >
                     <Download className="h-4 w-4" />
                   </button>
                   
@@ -603,7 +613,6 @@ export function SalesList() {
         )}
       </div>
 
-      {/* View Modal */}
       {actionType === 'view' && selectedSale && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -624,7 +633,7 @@ export function SalesList() {
                   <div className="space-y-2 text-sm">
                     <p><span className="font-medium">N° Venta:</span> {selectedSale.saleNumber}</p>
                     <p><span className="font-medium">Fecha:</span> {new Date(selectedSale.createdAt).toLocaleString('es-ES')}</p>
-                    <p><span className="font-medium">Método de pago:</span> <span className="capitalize">{formatPaymentMethod(selectedSale.paymentMethod)}</span></p>
+                    <p><span className="font-medium">Método de pago:</span> {formatPaymentMethod(selectedSale.paymentMethod)}</p>
                     {selectedSale.operationNumber && (
                       <p><span className="font-medium">N° Operación:</span> {selectedSale.operationNumber}</p>
                     )}
@@ -637,9 +646,6 @@ export function SalesList() {
                     <p><span className="font-medium">Nombre:</span> {selectedSale.customerName || 'Cliente general'}</p>
                     {selectedSale.customerDocument && (
                       <p><span className="font-medium">Documento:</span> {selectedSale.customerDocument}</p>
-                    )}
-                    {selectedSale.customerAddress && (
-                      <p><span className="font-medium">Dirección:</span> {selectedSale.customerAddress}</p>
                     )}
                   </div>
                 </div>
@@ -659,19 +665,19 @@ export function SalesList() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {selectedSale.items.map((item: any) => (
+                        {normalizeSaleItems(selectedSale.items).map((item: SaleItem) => (
                           <tr key={item.id}>
-                            <td className="px-3 py-2 text-sm">{item.name}</td>
+                            <td className="px-3 py-2 text-sm">{item.productName}</td>
                             <td className="px-3 py-2 text-sm">{item.quantity}</td>
-                            <td className="px-3 py-2 text-sm">S/ {item.price.toFixed(2)}</td>
-                            <td className="px-3 py-2 text-sm font-medium">S/ {(item.price * item.quantity).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-sm">S/ {item.unitPrice.toFixed(2)}</td>
+                            <td className="px-3 py-2 text-sm font-medium">S/ {(item.unitPrice * item.quantity).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot className="bg-gray-50">
                         <tr>
                           <td colSpan={3} className="px-3 py-2 text-sm font-medium text-right">Subtotal:</td>
-                          <td className="px-3 py-2 text-sm font-medium">S/ {(selectedSale.total - selectedSale.tax).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-sm font-medium">S/ {selectedSale.subtotal?.toFixed(2) || (selectedSale.total - selectedSale.tax).toFixed(2)}</td>
                         </tr>
                         <tr>
                           <td colSpan={3} className="px-3 py-2 text-sm font-medium text-right">IGV (18%):</td>
@@ -700,7 +706,6 @@ export function SalesList() {
         </div>
       )}
 
-      {/* Comprobante para PDF/Impresión (siempre renderizado pero oculto) */}
       <div className="hidden">
         {selectedSale && (
           <div ref={printRef}>

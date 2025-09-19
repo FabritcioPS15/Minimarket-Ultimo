@@ -46,16 +46,14 @@ export interface Sale {
   createdAt: string;
   createdBy: string;
 }
-
 export interface SaleItem {
   id: string;
   productId: string;
-  productName: string;
+  productName: string;  // ← Usar productName, no name
   quantity: number;
-  unitPrice: number;
+  unitPrice: number;    // ← Usar unitPrice, no price
   total: number;
 }
-
 export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'yape' | 'plin' | 'other';
 
 export interface User {

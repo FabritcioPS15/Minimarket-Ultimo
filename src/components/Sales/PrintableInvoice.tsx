@@ -6,6 +6,20 @@ export const PrintableInvoice = forwardRef(function PrintableInvoice(
 ) {
   if (!sale) return null;
 
+  // Función para normalizar items (igual que en SalesList)
+  const normalizeSaleItems = (items: any[]) => {
+    return items.map(item => ({
+      id: item.id || Math.random().toString(36).substr(2, 9),
+      productId: item.productId || item.id || '',
+      productName: item.productName || item.name || 'Producto sin nombre',
+      quantity: item.quantity || 1,
+      unitPrice: item.unitPrice || item.price || 0,
+      total: item.total || (item.quantity || 1) * (item.unitPrice || item.price || 0)
+    }));
+  };
+
+  const normalizedItems = normalizeSaleItems(sale.items || []);
+
   const baseStyle = {
     width: '100%',
     maxWidth: '360px',
@@ -34,6 +48,17 @@ export const PrintableInvoice = forwardRef(function PrintableInvoice(
   };
 
   const docStyle = type === 'factura' ? facturaStyle : boletaStyle;
+
+  const formatPaymentMethod = (method: string) => {
+    switch (method) {
+      case 'cash': return 'Efectivo';
+      case 'card': return 'Tarjeta';
+      case 'transfer': return 'Transferencia';
+      case 'yape': return 'Yape';
+      case 'plin': return 'Plin';
+      default: return method;
+    }
+  };
 
   return (
     <div ref={ref} style={baseStyle}>
@@ -104,12 +129,12 @@ export const PrintableInvoice = forwardRef(function PrintableInvoice(
             </tr>
           </thead>
           <tbody>
-            {sale.items.map((item: any) => (
+            {normalizedItems.map((item: any) => (
               <tr key={item.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '6px 4px', fontSize: '12px' }}>{item.name}</td>
+                <td style={{ padding: '6px 4px', fontSize: '12px' }}>{item.productName}</td>
                 <td style={{ textAlign: 'center', padding: '6px 4px', fontSize: '12px' }}>{item.quantity}</td>
-                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px' }}>S/ {(item.price ?? 0).toFixed(2)}</td>
-                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px' }}>S/ {((item.price ?? 0) * (item.quantity ?? 0)).toFixed(2)}</td>
+                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px' }}>S/ {(item.unitPrice ?? 0).toFixed(2)}</td>
+                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px' }}>S/ {((item.unitPrice ?? 0) * (item.quantity ?? 0)).toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
@@ -134,7 +159,7 @@ export const PrintableInvoice = forwardRef(function PrintableInvoice(
 
       {/* Pago */}
       <div style={{ marginBottom: '14px', fontSize: '12px' }}>
-        <div><strong>Método de pago:</strong> {sale.paymentMethod}</div>
+        <div><strong>Método de pago:</strong> {formatPaymentMethod(sale.paymentMethod)}</div>
         {sale.operationNumber && (
           <div style={{ marginTop: '4px' }}>
             <strong>N° Operación:</strong> {sale.operationNumber}
