@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export function UsersModule() {
-  const { state, users } = useApp();
+  const { state, users, addAuditEntry } = useApp();
   const { currentUser } = state;
   const [showForm, setShowForm] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);

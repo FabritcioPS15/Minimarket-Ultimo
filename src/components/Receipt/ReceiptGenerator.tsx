@@ -12,7 +12,7 @@ interface ReceiptGeneratorProps {
   };
 }
 
-export function ReceiptGenerator({ sale, products, businessInfo }: ReceiptGeneratorProps) {
+export function ReceiptGenerator({ sale, businessInfo }: ReceiptGeneratorProps) {
   const generatePDFReceipt = () => {
     // This would use a PDF library like jsPDF or react-pdf
     // For now, we'll create a print-friendly version

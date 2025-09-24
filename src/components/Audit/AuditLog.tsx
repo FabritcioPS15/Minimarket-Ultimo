@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { AuditEntry } from '../../types';
-import { Clock, User, Search, Filter, Activity, ShoppingCart, Package, Users, DollarSign, LogIn, LogOut, Settings, Eye, Plus, Edit, Trash2, AlertCircle } from 'lucide-react';
+import { Clock, User, Search, Filter, Activity, ShoppingCart, Package, Users, DollarSign, LogIn, LogOut, Settings, Eye, Plus, Edit, Trash2, AlertCircle, RefreshCw, Database } from 'lucide-react';
+import { clearAuditLog, createTestAuditEntries, checkAuditLogStatus } from '../../utils/auditDebug';
+import { supabase } from '../../lib/supabase';
 
 const actionIcons = {
   LOGIN: LogIn,
@@ -36,12 +38,14 @@ const actionColors = {
 };
 
 export const AuditLog: React.FC = () => {
-  const { state } = useApp();
-  const { auditEntries } = state;
+  const { auditLog, state } = useApp();
+  const { auditEntries, loading, error, refetch } = auditLog;
+  const { currentUser } = state;
   const [filteredEntries, setFilteredEntries] = useState<AuditEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEntity, setSelectedEntity] = useState<string>('all');
   const [selectedAction, setSelectedAction] = useState<string>('all');
+  const [selectedUser, setSelectedUser] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
 
   useEffect(() => {
@@ -63,6 +67,11 @@ export const AuditLog: React.FC = () => {
     // Filter by action
     if (selectedAction !== 'all') {
       filtered = filtered.filter(entry => entry.action === selectedAction);
+    }
+
+    // Filter by user
+    if (selectedUser !== 'all') {
+      filtered = filtered.filter(entry => entry.username === selectedUser);
     }
 
     // Filter by date
@@ -91,7 +100,7 @@ export const AuditLog: React.FC = () => {
     filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     setFilteredEntries(filtered);
-  }, [auditEntries, searchTerm, selectedEntity, selectedAction, dateFilter]);
+  }, [auditEntries, searchTerm, selectedEntity, selectedAction, selectedUser, dateFilter]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -123,12 +132,130 @@ export const AuditLog: React.FC = () => {
     return Object.entries(stats).map(([entity, count]) => ({ entity, count }));
   };
 
+  const getUniqueUsers = () => {
+    const users = Array.from(new Set(auditEntries.map(entry => entry.username).filter(Boolean)));
+    return users.sort();
+  };
+
+  const handleDebugActions = async () => {
+    if (!currentUser) return;
+    
+    try {
+      console.log('🔧 Iniciando acciones de debug...');
+      console.log('🔧 Usuario actual:', currentUser);
+      
+      // Verificar estado actual
+      await checkAuditLogStatus();
+      
+      // Limpiar datos existentes
+      await clearAuditLog();
+      
+      // Crear datos de prueba
+      await createTestAuditEntries(currentUser.id, currentUser.username);
+      
+      // Recargar datos
+      await refetch();
+      
+      alert('Datos de prueba creados. Revisa la consola para más detalles.');
+    } catch (error) {
+      console.error('Error en acciones de debug:', error);
+      alert('Error en acciones de debug. Revisa la consola.');
+    }
+  };
+
+  const handleDiagnostic = async () => {
+    try {
+      console.log('🔍 Iniciando diagnóstico completo...');
+      console.log('🔍 Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('🔍 Supabase Key:', import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Presente' : 'Faltante');
+      
+      // Verificar autenticación
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      console.log('🔍 Estado de autenticación:', { authData, authError });
+      
+      // Verificar conexión básica
+      const { data: testData, error: testError } = await supabase
+        .from('audit_logs')
+        .select('count')
+        .limit(1);
+        
+      console.log('🔍 Test de conexión básica:', { testData, testError });
+      
+      if (testError) {
+        console.error('❌ Error de conexión:', testError);
+        alert(`Error de conexión: ${testError.message}`);
+        return;
+      }
+      
+      // Verificar políticas RLS
+      const { data: policiesData, error: policiesError } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .limit(5);
+        
+      console.log('🔍 Test de políticas RLS:', { policiesData, policiesError });
+      
+      if (policiesError) {
+        console.error('❌ Error de políticas:', policiesError);
+        alert(`Error de políticas: ${policiesError.message}`);
+        return;
+      }
+      
+      // Verificar estructura de la tabla
+      const { data: structureData, error: structureError } = await supabase
+        .from('audit_logs')
+        .select('id, user_id, username, action, entity, details, created_at')
+        .limit(5);
+        
+      console.log('🔍 Test de estructura:', { structureData, structureError });
+      
+      // Verificar total de registros
+      const { count, error: countError } = await supabase
+        .from('audit_logs')
+        .select('*', { count: 'exact', head: true });
+        
+      console.log('🔍 Total de registros:', { count, countError });
+      
+      alert(`Diagnóstico completado - Total de registros: ${count || 0}. Revisa la consola para más detalles`);
+    } catch (error) {
+      console.error('Error en diagnóstico:', error);
+      alert('Error en diagnóstico');
+    }
+  };
+
   const getTodayStats = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
     return auditEntries.filter(entry => new Date(entry.timestamp) >= today).length;
   };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <span className="ml-2 text-gray-600">Cargando registro de auditoría...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
+            <div>
+              <h3 className="text-sm font-medium text-red-800">Error al cargar auditoría</h3>
+              <p className="text-sm text-red-600 mt-1">{error}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -137,6 +264,9 @@ export const AuditLog: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Auditoría del Sistema</h2>
           <p className="text-gray-600">Historial completo de actividades del sistema</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Mostrando {filteredEntries.length} de {auditEntries.length} entradas
+          </p>
         </div>
         <div className="flex items-center space-x-4 text-sm text-gray-600">
           <div className="flex items-center space-x-2">
@@ -147,6 +277,30 @@ export const AuditLog: React.FC = () => {
             <Clock className="w-4 h-4" />
             <span>Hoy: {getTodayStats()} actividades</span>
           </div>
+          <button
+            onClick={handleDiagnostic}
+            className="flex items-center space-x-2 px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+            title="Diagnosticar conexión y políticas"
+          >
+            <AlertCircle className="w-4 h-4" />
+            <span>Diagnóstico</span>
+          </button>
+          <button
+            onClick={handleDebugActions}
+            className="flex items-center space-x-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+            title="Crear datos de prueba para debug"
+          >
+            <Database className="w-4 h-4" />
+            <span>Debug</span>
+          </button>
+          <button
+            onClick={() => refetch()}
+            className="flex items-center space-x-2 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            title="Recargar datos"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Recargar</span>
+          </button>
         </div>
       </div>
 
@@ -169,7 +323,7 @@ export const AuditLog: React.FC = () => {
 
       {/* Filters */}
       <div className="bg-white p-6 rounded-lg shadow border">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -191,7 +345,7 @@ export const AuditLog: React.FC = () => {
             <option value="all">Todas las entidades</option>
             <option value="auth">Autenticación</option>
             <option value="sales">Ventas</option>
-            <option value="cash">Caja</option>
+            <option value="cash_sessions">Caja</option>
             <option value="products">Productos</option>
             <option value="users">Usuarios</option>
             <option value="system">Sistema</option>
@@ -212,6 +366,18 @@ export const AuditLog: React.FC = () => {
             <option value="PRODUCT_CREATE">Crear producto</option>
             <option value="PRODUCT_UPDATE">Editar producto</option>
             <option value="PRODUCT_DELETE">Eliminar producto</option>
+          </select>
+
+          {/* User Filter */}
+          <select
+            value={selectedUser}
+            onChange={(e) => setSelectedUser(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="all">Todos los usuarios</option>
+            {getUniqueUsers().map(user => (
+              <option key={user} value={user}>{user}</option>
+            ))}
           </select>
 
           {/* Date Filter */}
@@ -267,7 +433,7 @@ export const AuditLog: React.FC = () => {
                       <div className="mt-1 flex items-center space-x-4 text-xs text-gray-500">
                         <div className="flex items-center space-x-1">
                           <User className="w-3 h-3" />
-                          <span>{entry.username || 'Sistema'}</span>
+                          <span className="font-medium">{entry.username || 'Usuario desconocido'}</span>
                         </div>
                         <span className="capitalize">{entry.entity}</span>
                         <span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium">

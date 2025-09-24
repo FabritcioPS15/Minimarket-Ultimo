@@ -45,8 +45,8 @@ export function ProfitAnalysis() {
       sale.items.forEach(item => {
         const product = products.data.find(p => p.id === item.productId);
         if (product) {
-          const price = item.price ?? item.unitPrice ?? product.salePrice ?? 0;
-          const name = item.name ?? item.productName ?? product.name ?? 'Producto';
+          const price = item.unitPrice ?? item.unitPrice ?? product.salePrice ?? 0;
+          const name = item.productName ?? item.productName ?? product.name ?? 'Producto';
           const profit = (price - product.costPrice) * item.quantity;
           const existing = productProfits.get(item.productId) || {
             name,
@@ -134,7 +134,7 @@ export function ProfitAnalysis() {
 
       const saleProfit = sale.items.reduce((sum, item) => {
         const product = products.data.find(p => p.id === item.productId);
-        return sum + (product ? ((item.price ?? item.unitPrice ?? product.salePrice ?? 0) - product.costPrice) * item.quantity : 0);
+        return sum + (product ? ((item.unitPrice?? item.unitPrice ?? product.salePrice ?? 0) - product.costPrice) * item.quantity : 0);
       }, 0);
 
       if (profitByPeriod.has(key)) {

@@ -12,6 +12,10 @@ import { AuditLog } from './components/Audit/AuditLog';
 import { useApp } from './context/AppContext';
 import { ClientsPage } from './components/Clients/ClientsPage';
 import { SuppliersPage } from './components/Suppliers/SuppliersPage'; // Agregar esta importación
+import { Settings } from './components/Settings';
+import { Help } from './components/Help';
+import { Toast } from './components/Toast';
+import { Notifications } from './components/Notifications';
 
 function MainApp() {
   const { state } = useApp();
@@ -38,10 +42,16 @@ function MainApp() {
         return <CashModule />;
       case 'audit':
         return <AuditLog />;
+      case 'settings':
+        return <Settings />;
       case 'clients':
         return <ClientsPage />; // Corregido: usar return directamente
       case 'suppliers':
         return <SuppliersPage />; // Corregido: usar return directamente
+      case 'notifications':
+        return <Notifications />;
+      case 'help':
+        return <Help />;
       default:
         return <Dashboard />;
     }
@@ -58,6 +68,7 @@ function App() {
   return (
     <AppProvider>
       <MainApp />
+      <Toast />
     </AppProvider>
   );
 }

@@ -27,10 +27,31 @@ interface LayoutProps {
 }
 
 export function Layout({ children, activeView, onViewChange }: LayoutProps) {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, addAuditEntry } = useApp();
   const { currentUser, currentCashSession, alerts } = state;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Soporte para navegación global por eventos (e.g., desde CashModule)
+  React.useEffect(() => {
+    const handler = (e: any) => {
+      if (e?.detail?.view) {
+        onViewChange(e.detail.view);
+      }
+    };
+    window.addEventListener('navigate', handler);
+    return () => window.removeEventListener('navigate', handler);
+  }, [onViewChange]);
+
+  // Al cambiar de pestaña/vista, volver al inicio de la página
+  React.useEffect(() => {
+    try {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    } catch {
+      window.scrollTo(0, 0);
+    }
+  }, [activeView]);
 
   if (!currentUser) {
     return <div>{children}</div>;
@@ -38,9 +59,20 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
 
   const unreadAlerts = alerts.filter(alert => !alert.isRead).length;
 
-  const handleLogout = () => {
-    if (currentCashSession) {
-      dispatch({ type: 'END_CASH_SESSION' });
+  const handleLogout = async () => {
+    // Registrar en auditoría antes del logout
+    if (currentUser) {
+      await addAuditEntry({
+        action: 'LOGOUT',
+        entity: 'auth',
+        entityId: currentUser.id,
+        entityName: currentUser.username,
+        details: `Usuario "${currentUser.username}" cerró sesión`,
+        metadata: {
+          userRole: currentUser.role,
+          sessionDuration: 'N/A', // Podríamos calcular esto si guardamos el login time
+        },
+      });
     }
     dispatch({ type: 'LOGOUT' });
   };
@@ -232,7 +264,11 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
                 
                 {/* Alerts */}
                 <div className="relative">
-                  <button className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 relative">
+                  <button
+                    onClick={() => setShowNotifications(!showNotifications)}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 relative"
+                    title="Notificaciones"
+                  >
                     <Bell className="h-5 w-5" />
                     {unreadAlerts > 0 && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
@@ -240,6 +276,96 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
                       </span>
                     )}
                   </button>
+
+                  {showNotifications && (
+                    <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                      <div className="flex items-center justify-between px-3 py-2 border-b">
+                        <span className="text-sm font-semibold text-gray-900">Notificaciones</span>
+                        <button
+                          onClick={() => setShowNotifications(false)}
+                          className="text-gray-500 hover:text-gray-700 text-sm"
+                        >
+                          Cerrar
+                        </button>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {alerts.length === 0 && (
+                          <div className="p-4 text-sm text-gray-500">Sin notificaciones</div>
+                        )}
+                        {alerts
+                          .slice()
+                          .sort((a, b) => Number(a.isRead) - Number(b.isRead))
+                          .map((a) => (
+                            <div
+                              key={a.id}
+                              className={`px-3 py-2 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 ${a.isRead ? '' : 'bg-blue-50'}`}
+                              onClick={() => {
+                                // Notificar filtro sugerido según tipo de alerta
+                                try {
+                                  if ((a as any).type === 'expiration') {
+                                    window.dispatchEvent(new CustomEvent('products-apply-filter', { detail: { expiration: 'expiring', batchNumber: (a as any).metadata?.batchNumber, productId: (a as any).productId } }));
+                                  } else if ((a as any).type === 'low_stock') {
+                                    window.dispatchEvent(new CustomEvent('products-apply-filter', { detail: { stock: 'low', productId: (a as any).productId } }));
+                                  } else if ((a as any).type === 'over_stock') {
+                                    window.dispatchEvent(new CustomEvent('products-apply-filter', { detail: { stock: 'high', productId: (a as any).productId } }));
+                                  }
+                                } catch {}
+                                // Navegar a productos y cerrar panel
+                                onViewChange('products');
+                                setShowNotifications(false);
+                                // Marcar como leído
+                                dispatch({ type: 'MARK_ALERT_READ', payload: a.id });
+                              }}
+                              title="Ir a productos"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1 pr-2">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {a.type === 'expiration' ? 'Vencimiento de lote' : a.type === 'low_stock' ? 'Stock bajo' : a.type === 'over_stock' ? 'Sobre stock' : 'Alerta'}
+                                  </div>
+                                  <div className="text-xs text-gray-600 mt-0.5">
+                                    {a.message}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 mt-1">{new Date(a.createdAt).toLocaleString('es-PE')}</div>
+                                </div>
+                                {!a.isRead && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px]">Nuevo</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                      <div className="px-3 py-2 border-t flex items-center justify-between">
+                        <button
+                          onClick={() => {
+                            alerts.forEach(a => {
+                              if (!a.isRead) dispatch({ type: 'MARK_ALERT_READ', payload: a.id });
+                            });
+                          }}
+                          className="text-xs text-gray-600 hover:text-gray-800"
+                        >
+                          Marcar todo como leído
+                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => {
+                              setShowNotifications(false);
+                              onViewChange('notifications');
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            Ver todos
+                          </button>
+                          <button
+                            onClick={() => setShowNotifications(false)}
+                            className="text-xs text-gray-600 hover:text-gray-800"
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* User Info (visible on larger screens) */}

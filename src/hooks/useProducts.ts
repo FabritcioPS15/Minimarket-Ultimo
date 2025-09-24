@@ -25,27 +25,40 @@ export function useProducts() {
     imageUrl: dbProduct.image_url,
     createdAt: dbProduct.created_at,
     updatedAt: dbProduct.updated_at,
+    // campo lógico para UI
+    // @ts-ignore
+    isActive: dbProduct.is_active,
   });
 
   // Cargar productos
   const fetchProducts = async () => {
     try {
+      console.log('🔄 Iniciando carga de productos...');
       setLoading(true);
+      setError(null);
+      
       const { data, error } = await supabase
         .from('products')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      console.log('📊 Respuesta de Supabase:', { data, error });
+
+      if (error) {
+        console.error('❌ Error de Supabase:', error);
+        throw error;
+      }
 
       const transformedProducts = data?.map(transformFromDB) || [];
+      console.log('✅ Productos transformados:', transformedProducts);
       setProducts(transformedProducts);
       setError(null);
     } catch (err) {
-      console.error('Error fetching products:', err);
+      console.error('💥 Error fetching products:', err);
       setError('Error al cargar productos');
     } finally {
       setLoading(false);
+      console.log('🏁 Carga de productos finalizada');
     }
   };
 
@@ -66,14 +79,89 @@ export function useProducts() {
         }
       });
 
-      // 2. CALCULAR PORCENTAJE DE GANANCIA
+      // 2. AJUSTAR CÓDIGO SECUENCIAL POR CATEGORÍA (prefijo) O GLOBAL SI NO HAY CATEGORÍA
+      try {
+        const existingCodes = new Set((products || []).map(p => String(p.code || '').trim()).filter(Boolean));
+
+        const rawCategory = String((safeData as any).category || '').trim();
+        const buildPrefix = (category: string) => {
+          const letters = category.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z]/g, '');
+          const abbr = (letters.toUpperCase().slice(0, 3) || 'GEN');
+          return `${abbr}-`;
+        };
+
+        const tryCategorySequential = () => {
+          if (!rawCategory) return false;
+          const prefix = buildPrefix(rawCategory);
+          const pattern = new RegExp(`^${prefix}(\\d+)$`);
+          const prefixed = Array.from(existingCodes)
+            .map(c => ({ c, m: c.match(pattern) }))
+            .filter(x => !!x.m) as { c: string; m: RegExpMatchArray }[];
+          if (prefixed.length === 0) return false;
+          const maxLen = Math.max(...prefixed.map(x => x.m[1].length));
+          const maxNum = Math.max(...prefixed.map(x => parseInt(x.m[1], 10)));
+          const pad = (n: number) => String(n).padStart(maxLen, '0');
+
+          const provided = String(safeData.code || '').trim();
+          const providedMatch = provided.match(pattern);
+          let candidateNum: number;
+          if (!provided || providedMatch) {
+            if (!providedMatch) {
+              candidateNum = maxNum + 1;
+            } else {
+              const providedNum = parseInt(providedMatch[1], 10);
+              candidateNum = providedNum > maxNum + 1 ? maxNum + 1 : providedNum;
+            }
+            let candidate = `${prefix}${pad(candidateNum)}`;
+            while (existingCodes.has(candidate)) {
+              candidateNum += 1;
+              candidate = `${prefix}${pad(candidateNum)}`;
+            }
+            safeData.code = candidate;
+            return true;
+          }
+          return false;
+        };
+
+        const didCategory = tryCategorySequential();
+        if (!didCategory) {
+          // Fallback: solo numérico (sin prefijo)
+          const numericCodes = Array.from(existingCodes).filter(c => /^\d+$/.test(c));
+          if (numericCodes.length > 0) {
+            const maxLen = Math.max(...numericCodes.map(c => c.length));
+            const maxNum = Math.max(...numericCodes.map(c => parseInt(c, 10)));
+            const pad = (n: number) => String(n).padStart(maxLen, '0');
+
+            const provided = String(safeData.code || '').trim();
+            if (!provided || /^\d+$/.test(provided)) {
+              let candidateNum: number;
+              if (!provided) {
+                candidateNum = maxNum + 1;
+              } else {
+                const providedNum = parseInt(provided, 10);
+                candidateNum = providedNum > maxNum + 1 ? maxNum + 1 : providedNum;
+              }
+              let candidate = pad(candidateNum);
+              while (existingCodes.has(candidate)) {
+                candidateNum += 1;
+                candidate = pad(candidateNum);
+              }
+              safeData.code = candidate;
+            }
+          }
+        }
+      } catch (seqErr) {
+        console.warn('No se pudo ajustar código secuencial:', seqErr);
+      }
+
+      // 3. CALCULAR PORCENTAJE DE GANANCIA
       const costPrice = Number(safeData.costPrice) || 0;
       const salePrice = Number(safeData.salePrice) || 0;
       const profitPercentage = costPrice > 0 
         ? ((salePrice - costPrice) / costPrice) * 100 
         : 0;
 
-      // 3. PREPARAR DATOS PARA LA BASE DE DATOS
+      // 4. PREPARAR DATOS PARA LA BASE DE DATOS
       const dbProduct = {
         code: safeData.code || '',
         name: safeData.name || '',
@@ -92,7 +180,7 @@ export function useProducts() {
 
       console.log('📤 Datos a insertar:', dbProduct);
 
-      // 4. INSERTAR EN LA BASE DE DATOS
+      // 5. INSERTAR EN LA BASE DE DATOS
       const { data, error } = await supabase
         .from('products')
         .insert([dbProduct])
@@ -152,26 +240,52 @@ export function useProducts() {
       const updatedProduct = transformFromDB(data);
       setProducts(prev => prev.map(p => p.id === product.id ? updatedProduct : p));
       return updatedProduct;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating product:', err);
-      throw new Error('Error al actualizar producto');
+      const message = err?.message || err?.error_description || 'Error al actualizar producto (posible RLS/permisos)';
+      throw new Error(message);
     }
   };
 
   // Eliminar producto
   const deleteProduct = async (productId: string) => {
     try {
+      // Soft delete: ocultar producto (is_active = false)
       const { error } = await supabase
         .from('products')
-        .delete()
+        .update({ is_active: false })
         .eq('id', productId);
 
       if (error) throw error;
 
-      setProducts(prev => prev.filter(p => p.id !== productId));
+      setProducts(prev => prev.map(p => p.id === productId ? ({ ...p, isActive: false } as any) : p));
     } catch (err) {
       console.error('Error deleting product:', err);
-      throw new Error('Error al eliminar producto');
+      const message = (err as any)?.message || 'Error al ocultar producto';
+      throw new Error(message);
+    }
+  };
+
+  // Reactivar producto (soft-undelete)
+  const activateProduct = async (productId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .update({ is_active: true })
+        .eq('id', productId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const updated = transformFromDB(data);
+      // @ts-ignore
+      (updated as any).isActive = true;
+      setProducts(prev => prev.map(p => p.id === productId ? (updated as any) : p));
+      return true;
+    } catch (err) {
+      console.error('Error activating product:', err);
+      throw new Error('Error al habilitar producto');
     }
   };
 
@@ -204,12 +318,13 @@ export function useProducts() {
   }, []);
 
   return {
-    products,
+    data: products,
     loading,
     error,
     addProduct,
     updateProduct,
     deleteProduct,
+    activateProduct,
     findProductByCode,
     refetch: fetchProducts,
   };

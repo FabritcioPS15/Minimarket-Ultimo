@@ -13,7 +13,7 @@ export function useUsers() {
     try {
       setLoading(true);
       setError(null);
-      console.log("🔄 Fetching users from Supabase...");
+      console.log("Fetching users from Supabase...");
       
       const { data, error } = await supabase
         .from("users")
@@ -21,7 +21,7 @@ export function useUsers() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("❌ Supabase fetch error:", error);
+        console.error("Supabase fetch error:", error);
         throw error;
       }
       
@@ -34,7 +34,7 @@ export function useUsers() {
       setUsers(mappedUsers || []);
     } catch (err: any) {
       setError(err.message);
-      console.error("❌ Error fetching users:", err);
+      console.error("Error fetching users:", err);
     } finally {
       setLoading(false);
     }
@@ -54,19 +54,19 @@ export function useUsers() {
       console.log("📋 Raw DB response for", username, ":", { data, error });
       
       if (error) {
-        console.error("❌ Supabase search error:", error);
+        console.error("Supabase search error:", error);
         throw error;
       }
       
       if (data && data.length > 0) {
-        console.log("✅ User found in DB:", data[0]);
+        console.log("User found in DB:", data[0]);
         const mappedUser = mapUserFromDB(data[0] as UserFromDB);
-        console.log("🎯 Mapped user object:", mappedUser);
+        console.log("Mapped user object:", mappedUser);
         return mappedUser;
       }
-      
-      console.log("❌ No user found with username:", username);
-      
+
+      console.log("No user found with username:", username);
+
       // Debug: ver todos los usuarios en la BD
       const { data: allUsers } = await supabase
         .from("users")
@@ -76,7 +76,7 @@ export function useUsers() {
       
       return null;
     } catch (err: any) {
-      console.error("❌ Error finding user:", err);
+      console.error("Error finding user:", err);
       return null;
     }
   }, []);
@@ -100,19 +100,19 @@ export function useUsers() {
         updated_at: new Date().toISOString(),
       };
 
-      console.log("➕ Adding user to DB:", { ...userToInsert, password: '***' }); // No loggear password real
+      console.log("Adding user to DB:", { ...userToInsert, password: '***' }); // No loggear password real
       
       const { data, error } = await supabase.from("users").insert([userToInsert]).select();
       
       if (error) {
-        console.error("❌ Error adding user:", error);
+        console.error("Error adding user:", error);
         throw error;
       }
       
-      console.log("✅ User added successfully:", data);
+      console.log("User added successfully:", data);
       await fetchUsers();
     } catch (err: any) {
-      console.error("❌ Error in addUser:", err.message);
+      console.error("Error in addUser:", err.message);
       throw err;
     }
   };
@@ -134,7 +134,7 @@ export function useUsers() {
         userToUpdate.password = user.password;
       }
 
-      console.log("✏️ Updating user:", { ...userToUpdate, password: userToUpdate.password ? '***' : 'unchanged' });
+      console.log("Updating user:", { ...userToUpdate, password: userToUpdate.password ? '***' : 'unchanged' });
       
       const { error } = await supabase
         .from("users")
@@ -142,14 +142,14 @@ export function useUsers() {
         .eq("id", user.id);
 
       if (error) {
-        console.error("❌ Error updating user:", error);
+        console.error("Error updating user:", error);
         throw error;
       }
       
-      console.log("✅ User updated successfully");
+      console.log("User updated successfully");
       await fetchUsers();
     } catch (err: any) {
-      console.error("❌ Error in updateUser:", err.message);
+      console.error("Error in updateUser:", err.message);
       throw err;
     }
   };
@@ -157,19 +157,19 @@ export function useUsers() {
   // Eliminar usuario - CON MEJOR MANEJO DE ERRORES
   const deleteUser = async (id: string) => {
     try {
-      console.log("🗑️ Deleting user with ID:", id);
+      console.log("Deleting user with ID:", id);
       
       const { error } = await supabase.from("users").delete().eq("id", id);
       
       if (error) {
-        console.error("❌ Error deleting user:", error);
+        console.error("Error deleting user:", error);
         throw error;
       }
       
       console.log("✅ User deleted successfully");
       await fetchUsers();
     } catch (err: any) {
-      console.error("❌ Error in deleteUser:", err.message);
+      console.error("Error in deleteUser:", err.message);
       throw err;
     }
   };

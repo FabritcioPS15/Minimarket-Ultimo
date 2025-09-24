@@ -1,7 +1,7 @@
 // ✅ Este es el código completo y corregido para tu `useSales.ts`
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Sale } from '../types';
+import { Sale, BatchConsumption } from '../types';
 
 interface SaleFromDB {
   id: string;
@@ -136,6 +136,50 @@ export function useSales() {
     }
   };
 
+  // Nueva función para procesar ventas con consumo de lotes (FIFO)
+  const addSaleWithBatchConsumption = async (saleData: Omit<Sale, 'id'>) => {
+    try {
+      console.log('🛒 Agregando nueva venta con consumo de lotes:', saleData);
+
+      // 1) Verificación de stock por lectura (no consumir aquí)
+      for (const item of saleData.items) {
+        const { data: batches, error: checkError } = await supabase
+          .from('product_batches')
+          .select('quantity')
+          .eq('product_id', item.productId);
+
+        if (checkError) {
+          throw new Error(`No se pudo verificar stock de ${item.productName}: ${checkError.message}`);
+        }
+
+        const totalAvailable = (batches || []).reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0);
+        if (totalAvailable < item.quantity) {
+          throw new Error(`Stock insuficiente para ${item.productName}. Disponible: ${totalAvailable}, requerido: ${item.quantity}`);
+        }
+      }
+
+      // 2) Insertar la venta (sin consumir aún)
+      const saleResult = await addSale(saleData);
+
+      // 3) Consumir stock de lotes EXACTAMENTE UNA VEZ por item
+      for (const item of saleData.items) {
+        const { error: consumeError } = await supabase.rpc('consume_batch_stock', {
+          p_product_id: item.productId,
+          p_quantity: item.quantity
+        });
+        if (consumeError) {
+          throw new Error(`Error al consumir lotes de ${item.productName}: ${consumeError.message}`);
+        }
+      }
+
+      console.log('✅ Venta procesada con consumo de lotes correctamente');
+      return saleResult;
+    } catch (err: any) {
+      console.error('❌ Error processing sale with batch consumption:', err);
+      throw new Error(`Error al procesar venta: ${err.message}`);
+    }
+  };
+
   // El resto del código se mantiene igual
   const updateSale = async (sale: Sale) => {
     try {
@@ -232,11 +276,31 @@ export function useSales() {
     fetchSales();
   }, [fetchSales]);
 
+  // 🔔 Suscripción en tiempo real para refrescar ventas inmediatamente
+  useEffect(() => {
+    const channel = supabase
+      .channel('sales-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
+        fetchSales();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, () => {
+        fetchSales();
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  }, [fetchSales]);
+
   return {
     sales,
     loading,
     error,
     addSale,
+    addSaleWithBatchConsumption,
     updateSale,
     deleteSale,
     getSalesByDateRange,

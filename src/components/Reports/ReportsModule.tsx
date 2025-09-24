@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { SalesReports } from './SalesReports';
 import { InventoryReports } from './InventoryReports';
 import { ProfitAnalysis } from './ProfitAnalysis';
-import { BarChart3, Package, TrendingUp, Calendar } from 'lucide-react';
+import { BarChart3, Package, TrendingUp} from 'lucide-react';
 
 export function ReportsModule() {
   const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'profits'>('sales');

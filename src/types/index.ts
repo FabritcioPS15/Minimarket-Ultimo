@@ -174,13 +174,32 @@ export interface PaginatedResponse<T> {
   totalPages: number;
 }
 
+export interface ProductBatch {
+  id: string;
+  productId: string;
+  batchNumber: string;
+  quantity: number;
+  costPrice: number;
+  purchaseDate?: string;
+  supplier?: string;
+  expirationDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BatchConsumption {
+  batchId: string;
+  consumedQuantity: number;
+  batchCostPrice: number;
+}
+
 export interface AuditEntry {
   id: string;
   timestamp: string;
   userId: string;
   username: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'OPEN_CASH' | 'CLOSE_CASH' | 'SALE';
-  entity: 'product' | 'sale' | 'user' | 'cash' | 'system';
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'OPEN_CASH' | 'CLOSE_CASH' | 'SALE' | 'PRODUCT_CREATE' | 'PRODUCT_UPDATE' | 'PRODUCT_DELETE' | 'CASH_OPEN' | 'CASH_CLOSE';
+  entity: 'products' | 'sales' | 'users' | 'cash_sessions' | 'system' | 'auth';
   entityId: string;
   entityName: string;
   details: string;

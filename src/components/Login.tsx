@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import { Package, Lock, User, Eye, EyeOff } from 'lucide-react';
 
 export function Login() {
-  const { dispatch, users } = useApp();
+  const { dispatch, users, addAuditEntry } = useApp();
   const [credentials, setCredentials] = useState({
     username: '',
     password: '',
@@ -33,6 +33,20 @@ export function Login() {
       if (user && user.isActive) {
         if (user.password === credentials.password) {
           dispatch({ type: 'LOGIN', payload: user });
+          
+          // Registrar en auditoría
+          await addAuditEntry({
+            action: 'LOGIN',
+            entity: 'auth',
+            entityId: user.id,
+            entityName: user.username,
+            details: `Usuario "${user.username}" inició sesión`,
+            metadata: {
+              userRole: user.role,
+              loginTime: new Date().toISOString(),
+            },
+          });
+          
           setFailedAttempts(0); // resetear intentos al éxito
         } else {
           setError('Contraseña incorrecta');

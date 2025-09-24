@@ -65,7 +65,7 @@ export function SalesList() {
         sale.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.customerDocument?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.items.some(item => 
-          (item.productName || item.name || '').toLowerCase().includes(searchTerm.toLowerCase())
+          (item.productName || item.productName || '').toLowerCase().includes(searchTerm.toLowerCase())
         )
       );
     }
@@ -242,6 +242,82 @@ export function SalesList() {
             >
             <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
             Filtros
+          </button>
+          <button
+            onClick={() => {
+              const headers = ['N° Venta','Fecha','Cliente','Documento','Pago','Total','IGV','Items'];
+              const rows = filteredSales.map(s => [
+                s.saleNumber,
+                new Date(s.createdAt).toLocaleString('es-PE'),
+                s.customerName || 'Cliente general',
+                s.customerDocument || '',
+                s.paymentMethod,
+                (s.total || 0).toFixed(2),
+                (s.tax || 0).toFixed(2),
+                s.items.length
+              ]);
+              const style = `
+                <style>
+                  table { border-collapse: collapse; width: 100%; font-family: Arial; }
+                  th { background: #0F766E; color: #fff; padding: 8px; border: 1px solid #cbd5e1; text-align: left; }
+                  td { padding: 8px; border: 1px solid #e2e8f0; }
+                  tr:nth-child(even) td { background: #f8fafc; }
+                  .num { text-align: right; }
+                </style>`;
+              const thead = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+              const tbody = rows.map(r => `<tr>${r.map((v, idx) => `<td class="${[5,6].includes(idx) ? 'num' : ''}">${v ?? ''}</td>`).join('')}</tr>`).join('');
+              const html = `<!DOCTYPE html><html><head><meta charset=\"UTF-8\"/>${style}</head><body><table>${thead}${tbody}</table></body></html>`;
+              const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `ventas_formato_${new Date().toISOString().slice(0,10)}.xls`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center text-xs sm:text-sm bg-green-700 text-white px-3 py-2 rounded-lg hover:bg-green-800"
+            title="Exportar Excel con formato"
+          >
+            <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+            Exportar Excel
+          </button>
+          <button
+            onClick={() => {
+              const headers = ['N° Venta','Fecha','Cliente','Documento','Pago','Total','IGV','Items'];
+              const rows = filteredSales.map(s => [
+                s.saleNumber,
+                new Date(s.createdAt).toLocaleString('es-PE'),
+                s.customerName || 'Cliente general',
+                s.customerDocument || '',
+                s.paymentMethod,
+                s.total.toFixed(2),
+                s.tax.toFixed(2),
+                s.items.length
+              ]);
+              const csv = [headers, ...rows]
+                .map(r => r.map(v => {
+                  const s = String(v ?? '').replace(/"/g,'""');
+                  return /["\n\r,;\t]/.test(s) ? `"${s}"` : s;
+                }).join(';'))
+                .join('\r\n');
+              const bom = new Uint8Array([0xEF,0xBB,0xBF]);
+              const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `ventas_${new Date().toISOString().slice(0,10)}.csv`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center text-xs sm:text-sm bg-gray-800 text-white px-3 py-2 rounded-lg hover:bg-gray-900"
+            title="Exportar Excel"
+          >
+            <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+            Exportar
           </button>
         </div>
       </div>

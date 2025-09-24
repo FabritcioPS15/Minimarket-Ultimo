@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   Package, 
@@ -6,19 +6,20 @@ import {
   TrendingUp, 
   Calendar,
 } from 'lucide-react';
+import { useBatchAlerts } from '../../hooks/useBatchAlerts';
 
 export function InventoryReports() {
-  const { state, products } = useApp();
-  const { alerts } = state;
+  const { products } = useApp();
+  const batchAlerts = useBatchAlerts();
 
-  const lowStockProducts = products.data.filter(p => p.currentStock <= p.minStock);
-  const expiringSoonProducts = products.data.filter(p => {
+  const lowStockProducts = useMemo(() => products.data.filter(p => p.currentStock <= p.minStock && p.minStock > 0), [products.data]);
+  const expiringSoonProducts = useMemo(() => products.data.filter(p => {
     if (!p.expirationDate) return false;
     const expirationDate = new Date(p.expirationDate);
-    const thirtyDaysFromNow = new Date();
-    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-    return expirationDate <= thirtyDaysFromNow;
-  });
+    const today = new Date(); today.setHours(0,0,0,0);
+    const thirtyDaysFromNow = new Date(today); thirtyDaysFromNow.setDate(today.getDate() + 30);
+    return expirationDate >= today && expirationDate <= thirtyDaysFromNow;
+  }), [products.data]);
 
   const totalInventoryValue = products.data.reduce((sum, product) => 
     sum + (product.currentStock * product.costPrice), 0
@@ -112,7 +113,7 @@ export function InventoryReports() {
             <div>
               <h4 className="text-sm font-medium text-red-600 mb-2 flex items-center">
                 <AlertTriangle className="h-4 w-4 mr-1" />
-                Stock Bajo ({lowStockProducts.length})
+                Stock Bajo Producto ({lowStockProducts.length})
               </h4>
               <div className="space-y-2 max-h-32 overflow-y-auto">
                 {lowStockProducts.slice(0, 5).map(product => (
@@ -123,6 +124,21 @@ export function InventoryReports() {
                 ))}
               </div>
             </div>
+
+            {/* Low Stock by Batch */}
+            {(batchAlerts as any).getLowStockAlerts && (
+              <div>
+                <h4 className="text-sm font-medium text-red-600 mb-2 flex items-center">
+                  <AlertTriangle className="h-4 w-4 mr-1" />
+                  Stock Bajo Lote
+                </h4>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {/* This will be populated after a quick fetch when component mounts */}
+                  {/* For simplicity, we don't auto-fetch here to avoid extra calls; recommend linking to Dashboard detailed view. */}
+                  <p className="text-xs text-gray-500">Ver detalle en Dashboard (lotes por vencer / stock bajo por lote)</p>
+                </div>
+              </div>
+            )}
 
             {/* Expiring Soon */}
             {expiringSoonProducts.length > 0 && (

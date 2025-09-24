@@ -4,29 +4,29 @@ import {
   ShoppingCart, 
   AlertTriangle,
   DollarSign,
-  Calendar,
   BarChart3,
-  ChevronDown,
-  ChevronUp
+  Clock,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useBatchAlerts } from '../hooks/useBatchAlerts';
 
 export function Dashboard() {
   const { state, products, sales } = useApp();
   const { alerts, currentUser, currentCashSession } = state;
   const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const batchAlerts = useBatchAlerts();
 
-  const totalProducts = products.data.length;
-  const lowStockProducts = products.data.filter(p => p.currentStock <= p.minStock).length;
-  const todaysSales = sales.data.filter(sale => {
+  const totalProducts = products.data?.length || 0;
+  const lowStockProducts = products.data?.filter(p => p.currentStock <= p.minStock).length || 0;
+  const todaysSales = sales.data?.filter(sale => {
     const today = new Date().toDateString();
     return new Date(sale.createdAt).toDateString() === today;
-  });
+  }) || [];
 
   const todaysRevenue = todaysSales.reduce((total, sale) => total + sale.total, 0);
 
-  // Generar alertas de stock bajo
-  const lowStockAlerts = products.data
+  // 🔹 Alertas de stock bajo
+  const lowStockAlerts = (products.data || [])
     .filter(p => p.currentStock <= p.minStock)
     .map(p => ({
       id: `lowstock-${p.id}`,
@@ -38,53 +38,34 @@ export function Dashboard() {
       type: 'lowstock'
     }));
 
-  // Generar alertas de vencimiento (30 días antes)
-  const expiringSoonAlerts = products.data
-    .filter(p => {
-      if (!p.expirationDate) return false;
-      const expirationDate = new Date(p.expirationDate);
+  // 🔹 Alertas de lotes por vencer
+  const expiringBatchAlerts = (batchAlerts.expiringBatches || []).map(batch => ({
+    id: `expiring-batch-${batch.productId}-${batch.batchNumber}`,
+    productName: batch.productName,
+    message: batch.daysUntilExpiry !== null && batch.daysUntilExpiry !== undefined
+      ? `${batch.batchNumber} por vencer en ${batch.daysUntilExpiry} días (${batch.quantity} unidades)`
+      : `${batch.batchNumber} próximo a vencer (${batch.quantity} unidades)`,
+    severity: batch.daysUntilExpiry !== null && batch.daysUntilExpiry !== undefined && batch.daysUntilExpiry <= 7 ? 'high' : 'medium',
+    createdAt: new Date(),
+    isRead: false,
+    type: 'expiring_batch'
+  }));
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+  // 🔹 Alertas de lotes vencidos
+  const expiredBatchAlerts = (batchAlerts.expiredBatches || []).map(batch => ({
+    id: `expired-batch-${batch.productId}-${batch.batchNumber}`,
+    productName: batch.productName,
+    message: `${batch.batchNumber} vencido hace ${batch.daysExpired ?? 'N/A'} días (${batch.quantity} unidades)`,
+    severity: 'high',
+    createdAt: new Date(),
+    isRead: false,
+    type: 'expired_batch'
+  }));
 
-      const thirtyDaysFromNow = new Date();
-      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-
-      return expirationDate >= today && expirationDate <= thirtyDaysFromNow;
-    })
-    .map(p => {
-      const expirationDate = new Date(p.expirationDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const diffTime = expirationDate.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      let severity: 'high' | 'medium' | 'low' = 'low';
-      if (diffDays <= 7) severity = 'high';
-      else if (diffDays <= 15) severity = 'medium';
-
-      return {
-        id: `expire-${p.id}`,
-        productName: p.name,
-        message: `Por vencer el ${expirationDate.toLocaleDateString('es-ES')} (faltan ${diffDays} días)`,
-        severity,
-        createdAt: p.expirationDate,
-        isRead: false,
-        type: 'expire'
-      };
-    });
-
-  // Unir todas las alertas
-  const allAlerts = [
-    ...lowStockAlerts,
-    ...expiringSoonAlerts,
-    ...alerts
-  ];
-
+  const allAlerts = [...lowStockAlerts, ...expiringBatchAlerts, ...expiredBatchAlerts, ...alerts];
   const unreadAlerts = allAlerts.filter(alert => !alert.isRead).length;
 
-  const recentSales = sales.data
+  const recentSales = (sales.data || [])
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
 
@@ -93,7 +74,6 @@ export function Dashboard() {
       title: 'Productos Totales',
       value: totalProducts.toString(),
       icon: Package,
-      color: 'bg-blue-500',
       textColor: 'text-blue-600',
       bgColor: 'bg-blue-50'
     },
@@ -101,7 +81,6 @@ export function Dashboard() {
       title: 'Ventas Hoy',
       value: todaysSales.length.toString(),
       icon: ShoppingCart,
-      color: 'bg-green-500',
       textColor: 'text-green-600',
       bgColor: 'bg-green-50'
     },
@@ -109,7 +88,6 @@ export function Dashboard() {
       title: 'Ingresos Hoy',
       value: `S/ ${todaysRevenue.toFixed(2)}`,
       icon: DollarSign,
-      color: 'bg-emerald-500',
       textColor: 'text-emerald-600',
       bgColor: 'bg-emerald-50'
     },
@@ -117,13 +95,12 @@ export function Dashboard() {
       title: 'Productos con Stock Bajo',
       value: lowStockProducts.toString(),
       icon: AlertTriangle,
-      color: 'bg-orange-500',
       textColor: 'text-orange-600',
       bgColor: 'bg-orange-50'
     },
   ];
 
-  // Mostrar loading si los productos están cargando
+  // 🔹 Loading productos
   if (products.loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -133,7 +110,7 @@ export function Dashboard() {
     );
   }
 
-  // Mostrar error si hay problemas con los productos
+  // 🔹 Error productos
   if (products.error) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -170,7 +147,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Cash Session Alert */}
+      {/* Cash Session */}
       {!currentCashSession && currentUser?.role !== 'admin' && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-center">
@@ -201,7 +178,7 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Sales */}
+        {/* Ventas recientes */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Ventas Recientes</h3>
@@ -232,80 +209,108 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Alerts */}
+        {/* Alertas */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Alertas</h3>
-            {unreadAlerts > 0 && (
-              <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-medium">
-                {unreadAlerts} nuevas
-              </span>
-            )}
           </div>
-          <div className="space-y-3 max-h-96 overflow-y-auto" id="alerts-container">
-            {allAlerts.length > 0 ? (
-              allAlerts
-                .slice(0, showAllAlerts ? allAlerts.length : 5)
-                .map(alert => (
-                <div
-                  key={alert.id}
-                  className={`p-3 rounded-lg border ${
-                    !alert.isRead
-                      ? alert.severity === 'high'
-                        ? 'bg-red-50 border-red-200'
-                        : alert.severity === 'medium'
-                          ? 'bg-orange-50 border-orange-200'
-                          : 'bg-yellow-50 border-yellow-200'
-                      : 'bg-gray-50 border-gray-200'
-                  }`}
-                >
-                  <div className="flex items-start">
-                    <AlertTriangle
-                      className={`h-4 w-4 mt-0.5 mr-2 ${
-                        alert.severity === 'high'
-                          ? 'text-red-500'
-                          : alert.severity === 'medium'
-                            ? 'text-orange-500'
-                            : 'text-yellow-500'
-                      }`}
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">{alert.productName}</p>
-                      <p className="text-xs text-gray-600">{alert.message}</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {new Date(alert.createdAt).toLocaleDateString('es-ES')}
-                      </p>
+
+          {/* Switch */}
+          <div className="flex justify-center mb-4">
+            <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+              <button
+                onClick={() => setShowAllAlerts(false)}
+                className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  !showAllAlerts ? 'bg-blue-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Stock Bajo ({lowStockAlerts.length})
+              </button>
+              <button
+                onClick={() => setShowAllAlerts(true)}
+                className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  showAllAlerts ? 'bg-blue-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Lotes por vencer/vencidos ({expiringBatchAlerts.length + expiredBatchAlerts.length})
+              </button>
+            </div>
+          </div>
+
+          {/* Contenido dinámico */}
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {!showAllAlerts ? (
+              // Stock bajo
+              lowStockAlerts.length > 0 ? (
+                lowStockAlerts.map(alert => (
+                  <div key={alert.id} className="p-3 rounded-lg border bg-red-50 border-red-200">
+                    <div className="flex items-start">
+                      <AlertTriangle className="h-4 w-4 mt-0.5 mr-2 text-red-500" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">{alert.productName}</p>
+                        <p className="text-xs text-gray-600">{alert.message}</p>
+                      </div>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <AlertTriangle className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                  <p>No hay productos con stock bajo</p>
                 </div>
-              ))
+              )
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Calendar className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-                <p>No hay alertas pendientes</p>
-              </div>
-            )}
-          </div>
-          
-          {/* Botón para mostrar más/menos alertas */}
-          {allAlerts.length > 5 && (
-            <button
-              onClick={() => setShowAllAlerts(!showAllAlerts)}
-              className="mt-4 w-full flex items-center justify-center text-sm text-blue-600 hover:text-blue-800"
-            >
-              {showAllAlerts ? (
+              // Lotes
+              (expiringBatchAlerts.length > 0 || expiredBatchAlerts.length > 0) ? (
                 <>
-                  <ChevronUp className="h-4 w-4 mr-1" />
-                  Mostrar menos
+                  {expiredBatchAlerts.map(alert => (
+                    <div key={alert.id} className="p-3 rounded-lg border bg-red-50 border-red-200">
+                      <div className="flex items-start">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 mr-2 text-red-500" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">{alert.productName}</p>
+                          <p className="text-xs text-gray-600">{alert.message}</p>
+                          <p className="text-xs text-red-600 mt-1 font-medium">VENCIDO</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {expiringBatchAlerts.map(alert => (
+                    <div key={alert.id} className={`p-3 rounded-lg border ${
+                      alert.severity === 'high'
+                        ? 'bg-orange-50 border-orange-200'
+                        : 'bg-yellow-50 border-yellow-200'
+                    }`}>
+                      <div className="flex items-start">
+                        <Clock className={`h-4 w-4 mt-0.5 mr-2 ${
+                          alert.severity === 'high' ? 'text-orange-500' : 'text-yellow-500'
+                        }`} />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">{alert.productName}</p>
+                          <p className="text-xs text-gray-600">{alert.message}</p>
+                          <p className="text-xs text-orange-600 mt-1 font-medium">POR VENCER</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </>
               ) : (
-                <>
-                  <ChevronDown className="h-4 w-4 mr-1" />
-                  Ver todas las alertas ({allAlerts.length})
-                </>
-              )}
-            </button>
-          )}
+                <div className="text-center py-8 text-gray-500">
+                  <Package className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                  {!batchAlerts.functionsAvailable ? (
+                    <div>
+                      <p className="mb-2">Sistema de lotes no configurado</p>
+                      <p className="text-xs text-gray-400">
+                        Ejecuta el script SQL para habilitar las alertas de lotes
+                      </p>
+                    </div>
+                  ) : (
+                    <p>No hay lotes por vencer o vencidos</p>
+                  )}
+                </div>
+              )
+            )}
+          </div>
         </div>
       </div>
     </div>

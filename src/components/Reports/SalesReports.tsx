@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   BarChart,
@@ -10,18 +10,35 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  Legend
 } from 'recharts';
 import { TrendingUp, BarChart3, TrendingDown, DollarSign, ShoppingCart, Calendar, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 
 export function SalesReports() {
   const { products, sales } = useApp();
-  const [period, setPeriod] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 7));
+  const [period, setPeriod] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [weekBase, setWeekBase] = useState<Date>(new Date());
+  // Usar mes local por defecto (evita desfases por UTC)
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
+  const [selectedDate, setSelectedDate] = useState(defaultMonth);
   const [showFilters, setShowFilters] = useState(false);
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener ? mq.addEventListener('change', update) : mq.addListener(update as any);
+    return () => {
+      mq.removeEventListener ? mq.removeEventListener('change', update) : mq.removeListener(update as any);
+    };
+  }, []);
 
   const salesData = useMemo(() => {
+    const toUTCKey = (d: Date) => `${d.getUTCFullYear()}-${(d.getUTCMonth() + 1).toString().padStart(2,'0')}-${d.getUTCDate().toString().padStart(2,'0')}`;
     // Filtrar ventas por el período seleccionado
     const [selectedYear, selectedMonth] = selectedDate.split('-').map(Number);
     const filteredSales = sales.data.filter(sale => {
@@ -46,8 +63,8 @@ export function SalesReports() {
     filteredSales.forEach(sale => {
       sale.items.forEach(item => {
         const product = products.data.find(p => p.id === item.productId);
-        const name = item.name ?? item.productName ?? product?.name ?? 'Producto';
-        const price = item.price ?? item.unitPrice ?? product?.salePrice ?? 0;
+        const name = item.productName ?? item.productName ?? product?.name ?? 'Producto';
+        const price = item.unitPrice ?? item.unitPrice ?? product?.salePrice ?? 0;
         const existing = productSales.get(item.productId) || { 
           name,
           quantity: 0, 
@@ -68,21 +85,41 @@ export function SalesReports() {
     // Daily sales for chart - generar días completos del mes con formato consistente
     const dailySales = new Map<string, { total: number; formattedDate: string }>();
     
-    // Generar todos los días del mes seleccionado con formato YYYY-MM-DD
-    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateKey = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-      const formattedDate = new Date(dateKey).toLocaleDateString('es-ES', {
-        day: '2-digit',
-        month: 'short'
-      });
-      dailySales.set(dateKey, { total: 0, formattedDate });
+    // Generar ejes según período
+    if (period === 'weekly') {
+      // Semana basada en weekBase (en UTC para alinear claves con UTC)
+      const base = new Date(weekBase);
+      const dayOfWeek = base.getUTCDay(); // 0 domingo
+      const weekStart = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
+      weekStart.setUTCDate(weekStart.getUTCDate() - dayOfWeek);
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(weekStart);
+        d.setUTCDate(weekStart.getUTCDate() + i);
+        const key = toUTCKey(d);
+        const display = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+          .toLocaleDateString('es-ES', { weekday: 'short' });
+        dailySales.set(key, { total: 0, formattedDate: display });
+      }
+    } else {
+      // Mensual por defecto
+      const daysInMonth = new Date(Date.UTC(selectedYear, selectedMonth, 0)).getUTCDate();
+      for (let day = 1; day <= daysInMonth; day++) {
+        const utcDate = new Date(Date.UTC(selectedYear, selectedMonth - 1, day));
+        const dateKey = toUTCKey(utcDate);
+        const formattedDate = new Date(Date.UTC(selectedYear, selectedMonth - 1, day))
+          .toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+        dailySales.set(dateKey, { total: 0, formattedDate });
+      }
     }
 
     // Llenar con datos reales
     filteredSales.forEach(sale => {
-      const saleDate = new Date(sale.createdAt);
-      const dateKey = saleDate.toISOString().slice(0, 10); // Formato YYYY-MM-DD
+      const rawISO = typeof sale.createdAt === 'string' ? sale.createdAt : new Date(sale.createdAt).toISOString();
+      const rawDate = rawISO.slice(0,10); // YYYY-MM-DD (UTC)
+      // Ajuste +1 día para visualización y evitar que aparezca en el día anterior por desfases
+      const [yy, mm, dd] = rawDate.split('-').map(Number);
+      const shifted = new Date(Date.UTC(yy, (mm || 1) - 1, (dd || 1) + 1));
+      const dateKey = shifted.toISOString().slice(0,10);
       if (dailySales.has(dateKey)) {
         const existing = dailySales.get(dateKey)!;
         dailySales.set(dateKey, {
@@ -124,6 +161,14 @@ export function SalesReports() {
         amount: data.amount
       })),
       sales: filteredSales,
+      today: (() => {
+        const todayKey = new Date().toISOString().slice(0,10); // UTC hoy
+        const todaySales = filteredSales.filter(s => (typeof s.createdAt === 'string' ? s.createdAt.slice(0,10) : new Date(s.createdAt).toISOString().slice(0,10)) === todayKey);
+        return {
+          count: todaySales.length,
+          amount: todaySales.reduce((sum, s) => sum + s.total, 0),
+        };
+      })(),
     };
   }, [sales.data, period, selectedDate, products.data]);
 
@@ -157,13 +202,11 @@ export function SalesReports() {
   // Formatear fecha para el eje X del gráfico
   const formatXAxis = (dateString: string) => {
     try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('es-ES', {
-        day: '2-digit',
-        month: 'short'
-      });
+      const [y, m, d] = dateString.split('-').map(Number);
+      const date = new Date(y, (m || 1) - 1, d || 1);
+      return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
     } catch (error) {
-      return dateString.slice(8); // Solo el día
+      return dateString.slice(8);
     }
   };
 
@@ -207,6 +250,7 @@ export function SalesReports() {
                 value={period}
                 onChange={(e) => setPeriod(e.target.value as any)}
               >
+                <option value="weekly">Semanal</option>
                 <option value="monthly">Mensual</option>
                 <option value="quarterly">Trimestral</option>
                 <option value="yearly">Anual</option>
@@ -232,12 +276,47 @@ export function SalesReports() {
                 max={new Date().toISOString().slice(0, period === 'yearly' ? 4 : 7)}
               />
             </div>
+
+            {period === 'weekly' && (
+              <div className="flex items-end gap-2">
+                <div className="text-sm text-gray-600">
+                  Semana: {(() => {
+                    const start = new Date(weekBase); start.setDate(weekBase.getDate() - start.getDay());
+                    const end = new Date(start); end.setDate(start.getDate() + 6);
+                    return `${start.toLocaleDateString('es-ES')} - ${end.toLocaleDateString('es-ES')}`;
+                  })()}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setWeekBase(prev => { const d = new Date(prev); d.setDate(d.getDate() - 7); return d; })}
+                    className="px-2 py-1 border rounded text-sm hover:bg-gray-50"
+                  >
+                    Semana -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeekBase(new Date())}
+                    className="px-2 py-1 border rounded text-sm hover:bg-gray-50"
+                  >
+                    Esta semana
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeekBase(prev => { const d = new Date(prev); const today=new Date(); const next=new Date(prev); next.setDate(prev.getDate()+7); return next>today? today: next; })}
+                    className="px-2 py-1 border rounded text-sm hover:bg-gray-50"
+                  >
+                    Semana +1
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -277,6 +356,19 @@ export function SalesReports() {
             <Calendar className="h-6 w-6 sm:h-8 sm:w-8 text-orange-600" />
           </div>
         </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-600">Hoy</p>
+              <p className="text-lg sm:text-xl font-bold text-gray-900">{salesData.today.count} ventas</p>
+              <p className="text-xs text-gray-500">S/ {salesData.today.amount.toFixed(2)}</p>
+            </div>
+            <div className="bg-teal-50 p-2 sm:p-3 rounded-lg">
+              <TrendingUp className="h-6 w-6 sm:h-8 sm:w-8 text-teal-600" />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -285,7 +377,7 @@ export function SalesReports() {
           <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Ventas Diarias - {getPeriodName()}</h3>
           <div className="h-64 sm:h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={salesData.chartData}>
+              <BarChart data={salesData.chartData} barCategoryGap={4} barGap={0}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
                   dataKey="date" 
@@ -308,52 +400,80 @@ export function SalesReports() {
                     }
                   }}
                 />
-                <Bar dataKey="total" fill="#3B82F6" />
+                <Bar dataKey="total" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={28}>
+                  {
+                    salesData.chartData.map((entry: any, index: number) => {
+                      // también shift +1 para que el resaltado coincida con el ajuste visual
+                      const now = new Date();
+                      const todayShifted = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+                      const todayKeyUTC = todayShifted.toISOString().slice(0,10);
+                      const isToday = entry.date === todayKeyUTC;
+                      return <Cell key={`c-${index}`} fill={isToday ? '#10B981' : '#3B82F6'} />
+                    })
+                  }
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Payment Methods */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Métodos de Pago</h3>
-          {salesData.paymentMethods.length > 0 ? (
-            <div className="h-64 sm:h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={salesData.paymentMethods.map(pm => ({
-                      name: formatPaymentMethod(pm.method),
-                      value: pm.count,
-                      amount: pm.amount
-                    }))}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={120}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {salesData.paymentMethods.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value: any, name: any, props: any) => [
-                      `${value} ventas - S/ ${props.payload.amount.toFixed(2)}`,
-                      name
-                    ]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="text-center py-12 text-gray-500">
-              <BarChart3 className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-              <p className="text-sm">No hay datos de ventas para este período</p>
-            </div>
-          )}
-        </div>
+{/* Payment Methods */}
+<div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">
+    Métodos de Pago
+  </h3>
+  {salesData.paymentMethods.length > 0 ? (
+    <div className="h-72 sm:h-80">
+      <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+          <Pie
+            data={salesData.paymentMethods.map(pm => ({
+              name: formatPaymentMethod(pm.method),
+              value: pm.count,
+              amount: pm.amount,
+            }))}
+            cx="50%"
+            cy="50%"
+            innerRadius={isMobile ? 40 : 60}
+            outerRadius={isMobile ? 80 : 120}
+            dataKey="value"
+            labelLine={false}
+            label={isMobile ? false : ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            isAnimationActive={true} // activa animación
+            animationBegin={200}     // retardo en ms
+            animationDuration={1200} // duración animación
+            animationEasing="ease-out"
+          >
+            {salesData.paymentMethods.map((_, index) => (
+              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Pie>
+
+          <Tooltip
+            formatter={(value: any, name: any, props: any) => [
+              `${value} ventas - S/ ${props.payload.amount.toFixed(2)}`,
+              name,
+            ]}
+            contentStyle={{ fontSize: 12 }}
+          />
+
+          <Legend 
+            layout={isMobile ? 'horizontal' : 'horizontal'}
+            verticalAlign={isMobile ? 'bottom' : 'bottom'}
+            height={isMobile ? 48 : 36}
+            wrapperStyle={{ fontSize: isMobile ? '11px' : '12px', paddingTop: isMobile ? 8 : 0, lineHeight: '16px', display: 'flex', flexWrap: 'wrap', justifyContent: 'center' }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  ) : (
+    <div className="text-center py-12 text-gray-500">
+      <BarChart3 className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+      <p className="text-sm">No hay datos de ventas para este período</p>
+    </div>
+  )}
+</div>
+
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
