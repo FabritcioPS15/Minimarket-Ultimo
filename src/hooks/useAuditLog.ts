@@ -3,12 +3,13 @@ import { supabase } from '../lib/supabase';
 import { AuditEntry } from '../types';
 
 export function useAuditLog() {
+  const DEBUG = false;
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const transformAuditFromDB = (dbEntry: any): AuditEntry => {
-    console.log('🔍 Transformando entrada de auditoría:', dbEntry);
+    if (DEBUG) console.log('🔍 Transformando entrada de auditoría:', dbEntry);
     return {
       id: dbEntry.id,
       timestamp: dbEntry.created_at,
@@ -31,8 +32,8 @@ export function useAuditLog() {
     setError(null);
 
     try {
-      console.log('🔍 Intentando obtener datos de auditoría...');
-      console.log('🔍 Supabase client:', supabase);
+      if (DEBUG) console.log('🔍 Intentando obtener datos de auditoría...');
+      if (DEBUG) console.log('🔍 Supabase client:', supabase);
       
       // Primero probemos una consulta simple
       const { data: testData, error: testError } = await supabase
@@ -40,10 +41,10 @@ export function useAuditLog() {
         .select('id, created_at, username')
         .limit(5);
         
-      console.log('🧪 Test query result:', { testData, testError });
+      if (DEBUG) console.log('🧪 Test query result:', { testData, testError });
       
       if (testError) {
-        console.error('❌ Error en test query:', testError);
+        if (DEBUG) console.error('❌ Error en test query:', testError);
         throw testError;
       }
 
@@ -55,29 +56,29 @@ export function useAuditLog() {
         .limit(1000); // Limitar a 1000 entradas más recientes
 
       if (error) {
-        console.error('❌ Error de Supabase:', error);
+        if (DEBUG) console.error('❌ Error de Supabase:', error);
         throw error;
       }
       
       if (isMounted) {
-        console.log('📊 Datos de auditoría obtenidos:', data);
-        console.log('📊 Número de registros:', data?.length || 0);
-        console.log('📊 Tipo de datos:', typeof data);
-        console.log('📊 Es array?', Array.isArray(data));
+        if (DEBUG) console.log('📊 Datos de auditoría obtenidos:', data);
+        if (DEBUG) console.log('📊 Número de registros:', data?.length || 0);
+        if (DEBUG) console.log('📊 Tipo de datos:', typeof data);
+        if (DEBUG) console.log('📊 Es array?', Array.isArray(data));
         
         if (data && data.length > 0) {
-          console.log('📊 Primer registro:', data[0]);
-          console.log('📊 Transformando datos...');
+          if (DEBUG) console.log('📊 Primer registro:', data[0]);
+          if (DEBUG) console.log('📊 Transformando datos...');
           const transformed = data.map(transformAuditFromDB);
-          console.log('📊 Datos transformados:', transformed);
+          if (DEBUG) console.log('📊 Datos transformados:', transformed);
           setAuditEntries(transformed);
         } else {
-          console.log('📊 No hay datos en audit_logs');
+          if (DEBUG) console.log('📊 No hay datos en audit_logs');
           setAuditEntries([]);
         }
       }
     } catch (err: any) {
-      console.error('❌ Error en fetchAuditEntries:', err);
+      if (DEBUG) console.error('❌ Error en fetchAuditEntries:', err);
       if (isMounted) {
         setError(err.message || 'Error al cargar datos de auditoría');
       }
@@ -88,7 +89,7 @@ export function useAuditLog() {
 
   const addAuditEntry = async (entry: Omit<AuditEntry, 'id' | 'timestamp'>) => {
     try {
-      console.log('💾 Guardando entrada de auditoría:', entry);
+      if (DEBUG) console.log('💾 Guardando entrada de auditoría:', entry);
       const { data, error } = await supabase
         .from('audit_logs')
         .insert({
@@ -108,18 +109,18 @@ export function useAuditLog() {
         .single();
 
       if (error) {
-        console.error('❌ Error al guardar en BD:', error);
+        if (DEBUG) console.error('❌ Error al guardar en BD:', error);
         throw error;
       }
 
-      console.log('✅ Entrada guardada en BD:', data);
+      if (DEBUG) console.log('✅ Entrada guardada en BD:', data);
       // Actualizar el estado local con la nueva entrada
       const newEntry = transformAuditFromDB(data);
       setAuditEntries(prev => [newEntry, ...prev]);
 
       return data;
     } catch (err: any) {
-      console.error('Error adding audit entry:', err);
+      if (DEBUG) console.error('Error adding audit entry:', err);
       throw err;
     }
   };

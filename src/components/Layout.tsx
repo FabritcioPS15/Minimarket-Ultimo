@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Package, 
@@ -57,7 +57,16 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
     return <div>{children}</div>;
   }
 
-  const unreadAlerts = alerts.filter(alert => !alert.isRead).length;
+  const dedupedAlerts = useMemo(() => {
+    const seen = new Set<string>();
+    return alerts.filter(a => {
+      if (seen.has(a.id)) return false;
+      seen.add(a.id);
+      return true;
+    });
+  }, [alerts]);
+
+  const unreadAlerts = dedupedAlerts.filter(alert => !alert.isRead).length;
 
   const handleLogout = async () => {
     // Registrar en auditoría antes del logout
@@ -289,10 +298,10 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
                         </button>
                       </div>
                       <div className="max-h-80 overflow-y-auto">
-                        {alerts.length === 0 && (
+                        {dedupedAlerts.length === 0 && (
                           <div className="p-4 text-sm text-gray-500">Sin notificaciones</div>
                         )}
-                        {alerts
+                        {dedupedAlerts
                           .slice()
                           .sort((a, b) => Number(a.isRead) - Number(b.isRead))
                           .map((a) => (
@@ -338,7 +347,7 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
                       <div className="px-3 py-2 border-t flex items-center justify-between">
                         <button
                           onClick={() => {
-                            alerts.forEach(a => {
+                            dedupedAlerts.forEach(a => {
                               if (!a.isRead) dispatch({ type: 'MARK_ALERT_READ', payload: a.id });
                             });
                           }}

@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { User, UserFromDB, UserRole, mapUserFromDB } from "../types";
 
 export function useUsers() {
+  const DEBUG = false;
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -13,7 +14,7 @@ export function useUsers() {
     try {
       setLoading(true);
       setError(null);
-      console.log("Fetching users from Supabase...");
+      if (DEBUG) console.log("Fetching users from Supabase...");
       
       const { data, error } = await supabase
         .from("users")
@@ -21,20 +22,20 @@ export function useUsers() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Supabase fetch error:", error);
+        if (DEBUG) console.error("Supabase fetch error:", error);
         throw error;
       }
       
-      console.log("📊 Raw users data from DB:", data);
+      if (DEBUG) console.log("📊 Raw users data from DB:", data);
       
       // Mapear usuarios de la BD al tipo frontend
       const mappedUsers = (data as UserFromDB[]).map(mapUserFromDB);
-      console.log("🎯 Mapped users:", mappedUsers);
+      if (DEBUG) console.log("🎯 Mapped users:", mappedUsers);
       
       setUsers(mappedUsers || []);
     } catch (err: any) {
       setError(err.message);
-      console.error("Error fetching users:", err);
+      if (DEBUG) console.error("Error fetching users:", err);
     } finally {
       setLoading(false);
     }
@@ -43,7 +44,7 @@ export function useUsers() {
   // Buscar usuario por username - CON DEBUGGING MEJORADO
   const findUserByUsername = useCallback(async (username: string): Promise<User | null> => {
     try {
-      console.log("🔍 Searching for username:", username);
+      if (DEBUG) console.log("🔍 Searching for username:", username);
       
       const { data, error } = await supabase
         .from("users")
@@ -51,32 +52,32 @@ export function useUsers() {
         .eq("username", username)
         .limit(1);
 
-      console.log("📋 Raw DB response for", username, ":", { data, error });
+      if (DEBUG) console.log("📋 Raw DB response for", username, ":", { data, error });
       
       if (error) {
-        console.error("Supabase search error:", error);
+        if (DEBUG) console.error("Supabase search error:", error);
         throw error;
       }
       
       if (data && data.length > 0) {
-        console.log("User found in DB:", data[0]);
+        if (DEBUG) console.log("User found in DB:", data[0]);
         const mappedUser = mapUserFromDB(data[0] as UserFromDB);
-        console.log("Mapped user object:", mappedUser);
+        if (DEBUG) console.log("Mapped user object:", mappedUser);
         return mappedUser;
       }
 
-      console.log("No user found with username:", username);
+      if (DEBUG) console.log("No user found with username:", username);
 
       // Debug: ver todos los usuarios en la BD
       const { data: allUsers } = await supabase
         .from("users")
         .select("username, is_active")
         .limit(10);
-      console.log("📋 All usernames in DB:", allUsers);
+      if (DEBUG) console.log("📋 All usernames in DB:", allUsers);
       
       return null;
     } catch (err: any) {
-      console.error("Error finding user:", err);
+      if (DEBUG) console.error("Error finding user:", err);
       return null;
     }
   }, []);
@@ -100,19 +101,19 @@ export function useUsers() {
         updated_at: new Date().toISOString(),
       };
 
-      console.log("Adding user to DB:", { ...userToInsert, password: '***' }); // No loggear password real
+      if (DEBUG) console.log("Adding user to DB:", { ...userToInsert, password: '***' }); // No loggear password real
       
       const { data, error } = await supabase.from("users").insert([userToInsert]).select();
       
       if (error) {
-        console.error("Error adding user:", error);
+        if (DEBUG) console.error("Error adding user:", error);
         throw error;
       }
       
-      console.log("User added successfully:", data);
+      if (DEBUG) console.log("User added successfully:", data);
       await fetchUsers();
     } catch (err: any) {
-      console.error("Error in addUser:", err.message);
+      if (DEBUG) console.error("Error in addUser:", err.message);
       throw err;
     }
   };
@@ -134,7 +135,7 @@ export function useUsers() {
         userToUpdate.password = user.password;
       }
 
-      console.log("Updating user:", { ...userToUpdate, password: userToUpdate.password ? '***' : 'unchanged' });
+      if (DEBUG) console.log("Updating user:", { ...userToUpdate, password: userToUpdate.password ? '***' : 'unchanged' });
       
       const { error } = await supabase
         .from("users")
@@ -142,14 +143,14 @@ export function useUsers() {
         .eq("id", user.id);
 
       if (error) {
-        console.error("Error updating user:", error);
+        if (DEBUG) console.error("Error updating user:", error);
         throw error;
       }
       
-      console.log("User updated successfully");
+      if (DEBUG) console.log("User updated successfully");
       await fetchUsers();
     } catch (err: any) {
-      console.error("Error in updateUser:", err.message);
+      if (DEBUG) console.error("Error in updateUser:", err.message);
       throw err;
     }
   };
@@ -157,19 +158,19 @@ export function useUsers() {
   // Eliminar usuario - CON MEJOR MANEJO DE ERRORES
   const deleteUser = async (id: string) => {
     try {
-      console.log("Deleting user with ID:", id);
+      if (DEBUG) console.log("Deleting user with ID:", id);
       
       const { error } = await supabase.from("users").delete().eq("id", id);
       
       if (error) {
-        console.error("Error deleting user:", error);
+        if (DEBUG) console.error("Error deleting user:", error);
         throw error;
       }
       
-      console.log("✅ User deleted successfully");
+      if (DEBUG) console.log("✅ User deleted successfully");
       await fetchUsers();
     } catch (err: any) {
-      console.error("Error in deleteUser:", err.message);
+      if (DEBUG) console.error("Error in deleteUser:", err.message);
       throw err;
     }
   };
@@ -177,25 +178,25 @@ export function useUsers() {
   // Verificar credenciales de login - CON DEBUGGING
   const verifyCredentials = async (username: string, password: string): Promise<User | null> => {
     try {
-      console.log("🔐 Verifying credentials for:", username);
+      if (DEBUG) console.log("🔐 Verifying credentials for:", username);
       const user = await findUserByUsername(username);
       
-      console.log("📋 User found for verification:", user ? { ...user, password: '***' } : null);
+      if (DEBUG) console.log("📋 User found for verification:", user ? { ...user, password: '***' } : null);
       
       if (user) {
-        console.log("🔑 Password check - DB exists:", !!user.password, "Input provided:", !!password);
-        console.log("✅ Active status:", user.isActive);
+        if (DEBUG) console.log("🔑 Password check - DB exists:", !!user.password, "Input provided:", !!password);
+        if (DEBUG) console.log("✅ Active status:", user.isActive);
         
         if (user.password === password && user.isActive) {
-          console.log("🎉 Credentials verified successfully!");
+          if (DEBUG) console.log("🎉 Credentials verified successfully!");
           return user;
         }
       }
       
-      console.log("❌ Credentials verification failed");
+      if (DEBUG) console.log("❌ Credentials verification failed");
       return null;
     } catch (err: any) {
-      console.error("❌ Error verifying credentials:", err);
+      if (DEBUG) console.error("❌ Error verifying credentials:", err);
       return null;
     }
   };
@@ -203,39 +204,39 @@ export function useUsers() {
   // Función de debugging
   const debugUsers = async () => {
     try {
-      console.log("🐛 DEBUG: Current users state:", users);
+      if (DEBUG) console.log("🐛 DEBUG: Current users state:", users);
       
       const { data, error } = await supabase
         .from("users")
         .select("*");
       
       if (error) {
-        console.error("🐛 DEBUG Error:", error);
+        if (DEBUG) console.error("🐛 DEBUG Error:", error);
         return;
       }
       
-      console.log("🐛 DEBUG - All users in DB:", data);
+      if (DEBUG) console.log("🐛 DEBUG - All users in DB:", data);
       return data;
     } catch (err) {
-      console.error("🐛 DEBUG Error:", err);
+      if (DEBUG) console.error("🐛 DEBUG Error:", err);
     }
   };
 
   // Función para verificar políticas RLS
   const checkRLSPolicies = async () => {
     try {
-      console.log("🔍 Checking RLS policies...");
+      if (DEBUG) console.log("🔍 Checking RLS policies...");
       
       // Probar operaciones básicas
       const { data: session } = await supabase.auth.getSession();
-      console.log("🔐 Session:", session);
+      if (DEBUG) console.log("🔐 Session:", session);
       
       // Probar SELECT
       const { error: selectError } = await supabase
         .from("users")
         .select("count")
         .limit(1);
-      console.log("✅ SELECT policy:", selectError ? `Error: ${selectError.message}` : "Working");
+      if (DEBUG) console.log("✅ SELECT policy:", selectError ? `Error: ${selectError.message}` : "Working");
       
       // Probar INSERT (usaremos un usuario temporal)
       const { error: insertError } = await supabase
@@ -248,10 +249,10 @@ export function useUsers() {
           password: 'temp123'
         })
         .select();
-      console.log("✅ INSERT policy:", insertError ? `Error: ${insertError.message}` : "Working");
+      if (DEBUG) console.log("✅ INSERT policy:", insertError ? `Error: ${insertError.message}` : "Working");
       
     } catch (err) {
-      console.error("❌ RLS check error:", err);
+      if (DEBUG) console.error("❌ RLS check error:", err);
     }
   };
 

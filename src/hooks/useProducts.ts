@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Product } from '../types';
 
 export function useProducts() {
+  const DEBUG = false;
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +34,7 @@ export function useProducts() {
   // Cargar productos
   const fetchProducts = async () => {
     try {
-      console.log('🔄 Iniciando carga de productos...');
+      if (DEBUG) console.log('🔄 Iniciando carga de productos...');
       setLoading(true);
       setError(null);
       
@@ -42,30 +43,30 @@ export function useProducts() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      console.log('📊 Respuesta de Supabase:', { data, error });
+      if (DEBUG) console.log('📊 Respuesta de Supabase:', { data, error });
 
       if (error) {
-        console.error('❌ Error de Supabase:', error);
+        if (DEBUG) console.error('❌ Error de Supabase:', error);
         throw error;
       }
 
       const transformedProducts = data?.map(transformFromDB) || [];
-      console.log('✅ Productos transformados:', transformedProducts);
+      if (DEBUG) console.log('✅ Productos transformados:', transformedProducts);
       setProducts(transformedProducts);
       setError(null);
     } catch (err) {
-      console.error('💥 Error fetching products:', err);
+      if (DEBUG) console.error('💥 Error fetching products:', err);
       setError('Error al cargar productos');
     } finally {
       setLoading(false);
-      console.log('🏁 Carga de productos finalizada');
+      if (DEBUG) console.log('🏁 Carga de productos finalizada');
     }
   };
 
   // FUNCIÓN SEGURA para agregar producto
   const addProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      console.log('=== INICIANDO INSERCIÓN ===');
+      if (DEBUG) console.log('=== INICIANDO INSERCIÓN ===');
       
       // 1. ELIMINAR CUALQUIER CAMPO QUE NO DEBERÍA IR
       const safeData = { ...productData };
@@ -74,7 +75,7 @@ export function useProducts() {
       const fieldsToRemove = ['id', 'createdAt', 'updatedAt', 'created_at', 'updated_at'];
       fieldsToRemove.forEach(field => {
         if (field in safeData) {
-          console.warn(`⚠️ Removiendo campo ${field} con valor:`, (safeData as any)[field]);
+          if (DEBUG) console.warn(`⚠️ Removiendo campo ${field} con valor:`, (safeData as any)[field]);
           delete (safeData as any)[field];
         }
       });
@@ -151,7 +152,7 @@ export function useProducts() {
           }
         }
       } catch (seqErr) {
-        console.warn('No se pudo ajustar código secuencial:', seqErr);
+        if (DEBUG) console.warn('No se pudo ajustar código secuencial:', seqErr);
       }
 
       // 3. CALCULAR PORCENTAJE DE GANANCIA
@@ -178,7 +179,7 @@ export function useProducts() {
         image_url: safeData.imageUrl || null,
       };
 
-      console.log('📤 Datos a insertar:', dbProduct);
+      if (DEBUG) console.log('📤 Datos a insertar:', dbProduct);
 
       // 5. INSERTAR EN LA BASE DE DATOS
       const { data, error } = await supabase
@@ -188,17 +189,17 @@ export function useProducts() {
         .single();
 
       if (error) {
-        console.error('❌ Error de Supabase:', error);
+        if (DEBUG) console.error('❌ Error de Supabase:', error);
         throw error;
       }
 
-      console.log('✅ Producto insertado correctamente');
+      if (DEBUG) console.log('✅ Producto insertado correctamente');
       const newProduct = transformFromDB(data);
       setProducts(prev => [newProduct, ...prev]);
       return newProduct;
 
     } catch (err) {
-      console.error('💥 Error adding product:', err);
+      if (DEBUG) console.error('💥 Error adding product:', err);
       throw new Error(`Error al agregar producto: ${err.message}`);
     }
   };
@@ -241,7 +242,7 @@ export function useProducts() {
       setProducts(prev => prev.map(p => p.id === product.id ? updatedProduct : p));
       return updatedProduct;
     } catch (err: any) {
-      console.error('Error updating product:', err);
+      if (DEBUG) console.error('Error updating product:', err);
       const message = err?.message || err?.error_description || 'Error al actualizar producto (posible RLS/permisos)';
       throw new Error(message);
     }
@@ -260,7 +261,7 @@ export function useProducts() {
 
       setProducts(prev => prev.map(p => p.id === productId ? ({ ...p, isActive: false } as any) : p));
     } catch (err) {
-      console.error('Error deleting product:', err);
+      if (DEBUG) console.error('Error deleting product:', err);
       const message = (err as any)?.message || 'Error al ocultar producto';
       throw new Error(message);
     }
@@ -284,7 +285,7 @@ export function useProducts() {
       setProducts(prev => prev.map(p => p.id === productId ? (updated as any) : p));
       return true;
     } catch (err) {
-      console.error('Error activating product:', err);
+      if (DEBUG) console.error('Error activating product:', err);
       throw new Error('Error al habilitar producto');
     }
   };
@@ -307,7 +308,7 @@ export function useProducts() {
 
       return transformFromDB(data);
     } catch (err) {
-      console.error('Error finding product by code:', err);
+      if (DEBUG) console.error('Error finding product by code:', err);
       throw new Error('Error al buscar producto');
     }
   };

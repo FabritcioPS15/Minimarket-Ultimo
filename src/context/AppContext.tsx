@@ -40,6 +40,12 @@ interface AppContextType {
   state: AppState;
   dispatch: React.Dispatch<AppAction>;
   addAuditEntry: (entry: Omit<AuditEntry, 'id' | 'timestamp' | 'userId' | 'username'>) => void;
+  auditLog: {
+    auditEntries: AuditEntry[];
+    loading: boolean;
+    error: string | null;
+    refetch: () => Promise<void>;
+  };
   products: {
     data: any[];
     loading: boolean;

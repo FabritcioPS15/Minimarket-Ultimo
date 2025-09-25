@@ -37,25 +37,42 @@ export function SalesReports() {
     };
   }, []);
 
-  const salesData = useMemo(() => {
-    const toUTCKey = (d: Date) => `${d.getUTCFullYear()}-${(d.getUTCMonth() + 1).toString().padStart(2,'0')}-${d.getUTCDate().toString().padStart(2,'0')}`;
-    // Filtrar ventas por el período seleccionado
+  
+
+  // Ventas filtradas según período (memoizado y reutilizable)
+  const filteredSales = useMemo(() => {
     const [selectedYear, selectedMonth] = selectedDate.split('-').map(Number);
-    const filteredSales = sales.data.filter(sale => {
+    if (period === 'weekly') {
+      const base = new Date(weekBase);
+      const dayOfWeek = base.getUTCDay();
+      const weekStart = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() - dayOfWeek));
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+      weekEnd.setUTCHours(23, 59, 59, 999);
+      return sales.data.filter(sale => {
+        const d = new Date(sale.createdAt);
+        return d >= weekStart && d <= weekEnd;
+      });
+    }
+    return sales.data.filter(sale => {
       const saleDate = new Date(sale.createdAt);
       const saleYear = saleDate.getFullYear();
       const saleMonth = saleDate.getMonth() + 1;
-      
       if (period === 'monthly') {
         return saleYear === selectedYear && saleMonth === selectedMonth;
-      } else if (period === 'quarterly') {
+      }
+      if (period === 'quarterly') {
         const saleQuarter = Math.floor((saleMonth - 1) / 3) + 1;
         const selectedQuarter = Math.floor((selectedMonth - 1) / 3) + 1;
         return saleYear === selectedYear && saleQuarter === selectedQuarter;
-      } else { // yearly
-        return saleYear === selectedYear;
       }
+      // yearly
+      return saleYear === selectedYear;
     });
+  }, [sales.data, period, selectedDate, weekBase]);
+
+  const salesData = useMemo(() => {
+    const toUTCKey = (d: Date) => `${d.getUTCFullYear()}-${(d.getUTCMonth() + 1).toString().padStart(2,'0')}-${d.getUTCDate().toString().padStart(2,'0')}`;
 
     // Most sold products
     const productSales = new Map<string, { name: string; quantity: number; revenue: number }>();
@@ -63,8 +80,8 @@ export function SalesReports() {
     filteredSales.forEach(sale => {
       sale.items.forEach(item => {
         const product = products.data.find(p => p.id === item.productId);
-        const name = item.productName ?? item.productName ?? product?.name ?? 'Producto';
-        const price = item.unitPrice ?? item.unitPrice ?? product?.salePrice ?? 0;
+        const name = item.productName ?? product?.name ?? 'Producto';
+        const price = item.unitPrice ?? product?.salePrice ?? 0;
         const existing = productSales.get(item.productId) || { 
           name,
           quantity: 0, 
@@ -102,6 +119,7 @@ export function SalesReports() {
       }
     } else {
       // Mensual por defecto
+      const [selectedYear, selectedMonth] = selectedDate.split('-').map(Number);
       const daysInMonth = new Date(Date.UTC(selectedYear, selectedMonth, 0)).getUTCDate();
       for (let day = 1; day <= daysInMonth; day++) {
         const utcDate = new Date(Date.UTC(selectedYear, selectedMonth - 1, day));
@@ -170,11 +188,11 @@ export function SalesReports() {
         };
       })(),
     };
-  }, [sales.data, period, selectedDate, products.data]);
+  }, [filteredSales, products.data]);
 
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
-  // Función para formatear el método de pago en español
+  // Formatear método de pago (restaurado en la ubicación superior para uso global)
   const formatPaymentMethod = (method: string) => {
     switch (method) {
       case 'cash': return 'Efectivo';
@@ -185,6 +203,18 @@ export function SalesReports() {
       default: return method;
     }
   };
+
+  // Dataset de métodos de pago (comportamiento original basado en salesData)
+  const paymentMethodsFast = useMemo(() => {
+    return salesData.paymentMethods.map(pm => ({
+      method: pm.method,
+      name: formatPaymentMethod(pm.method),
+      value: pm.count,
+      amount: pm.amount,
+    }));
+  }, [salesData.paymentMethods]);
+
+  
 
   // Obtener el nombre del período seleccionado
   const getPeriodName = () => {
@@ -400,15 +430,15 @@ export function SalesReports() {
                     }
                   }}
                 />
-                <Bar dataKey="total" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={28}>
+                <Bar dataKey="total" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={28} isAnimationActive={false}>
                   {
-                    salesData.chartData.map((entry: any, index: number) => {
+                    salesData.chartData.map((entry: any) => {
                       // también shift +1 para que el resaltado coincida con el ajuste visual
                       const now = new Date();
                       const todayShifted = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
                       const todayKeyUTC = todayShifted.toISOString().slice(0,10);
                       const isToday = entry.date === todayKeyUTC;
-                      return <Cell key={`c-${index}`} fill={isToday ? '#10B981' : '#3B82F6'} />
+                      return <Cell key={`c-${entry.date}`} fill={isToday ? '#10B981' : '#3B82F6'} />
                     })
                   }
                 </Bar>
@@ -422,29 +452,25 @@ export function SalesReports() {
   <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">
     Métodos de Pago
   </h3>
-  {salesData.paymentMethods.length > 0 ? (
+  {paymentMethodsFast.length > 0 ? (
     <div className="h-72 sm:h-80">
       <ResponsiveContainer width="100%" height="100%">
           <PieChart>
           <Pie
-            data={salesData.paymentMethods.map(pm => ({
-              name: formatPaymentMethod(pm.method),
-              value: pm.count,
-              amount: pm.amount,
-            }))}
+            data={paymentMethodsFast}
             cx="50%"
             cy="50%"
             innerRadius={isMobile ? 40 : 60}
             outerRadius={isMobile ? 80 : 120}
             dataKey="value"
             labelLine={false}
-            label={isMobile ? false : ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-            isAnimationActive={true} // activa animación
-            animationBegin={200}     // retardo en ms
-            animationDuration={1200} // duración animación
+            label={isMobile ? false : (({ name, percent = 0 }) => `${name} ${(percent * 100).toFixed(0)}%`)}
+            isAnimationActive={!isMobile}
+            animationBegin={0}
+            animationDuration={400}
             animationEasing="ease-out"
           >
-            {salesData.paymentMethods.map((_, index) => (
+            {paymentMethodsFast.map((_, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
